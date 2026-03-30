@@ -1,0 +1,50 @@
+{
+  "name": "@klusterio/addon-otel",
+  "version": "0.1.0",
+  "description": "OpenTelemetry addon for Kinetic - traces, metrics, and observability",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@klusterio/kinetic-core": "workspace:*",
+    "fastify": "^5.0.0"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/sdk-node": "^0.214.0",
+    "@opentelemetry/sdk-trace-node": "^2.6.1",
+    "@opentelemetry/sdk-metrics": "^2.6.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.214.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.214.0",
+    "@opentelemetry/resources": "^2.6.1",
+    "@opentelemetry/semantic-conventions": "^1.40.0",
+    "@opentelemetry/instrumentation": "^0.214.0",
+    "@opentelemetry/instrumentation-http": "^0.214.0",
+    "@opentelemetry/core": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "fastify": "^5.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.1.0"
+  },
+  "keywords": [
+    "opentelemetry",
+    "otel",
+    "observability",
+    "tracing",
+    "metrics",
+    "kinetic",
+    "fastify"
+  ]
+}

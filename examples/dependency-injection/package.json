@@ -1,0 +1,12 @@
+{
+  "name": "dependency-injection-example",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node app.mjs"
+  },
+  "dependencies": {
+    "@klusterio/kinetic-core": "workspace:*",
+    "zod": "^3.22.0"
+  }
+}

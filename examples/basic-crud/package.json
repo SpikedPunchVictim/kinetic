@@ -1,0 +1,13 @@
+{
+  "name": "basic-crud-example",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node app.mjs",
+    "test": "node test.mjs"
+  },
+  "dependencies": {
+    "@klusterio/kinetic-core": "workspace:*",
+    "zod": "^3.22.0"
+  }
+}

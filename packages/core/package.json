@@ -1,0 +1,54 @@
+{
+  "name": "@klusterio/kinetic-core",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./config": {
+      "import": "./dist/config/index.js",
+      "types": "./dist/config/index.d.ts"
+    },
+    "./schema": {
+      "import": "./dist/schema/index.js",
+      "types": "./dist/schema/index.d.ts"
+    },
+    "./security": {
+      "import": "./dist/security/index.js",
+      "types": "./dist/security/index.d.ts"
+    },
+    "./observability": {
+      "import": "./dist/observability/index.js",
+      "types": "./dist/observability/index.d.ts"
+    },
+    "./ai-dev": {
+      "import": "./dist/ai-dev/index.js",
+      "types": "./dist/ai-dev/index.d.ts"
+    },
+    "./tracer": {
+      "import": "./dist/tracer.js",
+      "types": "./dist/tracer.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^4.25.0",
+    "zod": "^3.22.0",
+    "pino": "^8.17.0",
+    "pino-pretty": "^10.3.0",
+    "prom-client": "^15.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/pino": "^7.0.5",
+    "typescript": "^5.3.0",
+    "vitest": "^1.1.0"
+  }
+}

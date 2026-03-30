@@ -1,0 +1,29 @@
+{
+  "name": "@klusterio/addon-jwt",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@klusterio/kinetic-core": "workspace:*"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.1.0"
+  }
+}

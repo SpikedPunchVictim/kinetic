@@ -1,0 +1,13 @@
+{
+  "name": "observability-demo-example",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node app.mjs"
+  },
+  "dependencies": {
+    "@klusterio/kinetic-core": "workspace:*",
+    "@klusterio/addon-otel": "workspace:*",
+    "zod": "^3.22.0"
+  }
+}

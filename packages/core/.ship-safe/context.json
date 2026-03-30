@@ -1,0 +1,308 @@
+{
+  "version": "6.1.1",
+  "generatedAt": "2026-03-27T07:31:43.685Z",
+  "rootPath": "/Users/spikedpunchvictim/projects/kinetic/packages/core",
+  "recon": {
+    "frameworks": [
+      "fastify"
+    ],
+    "languages": [
+      "typescript"
+    ],
+    "apiRoutes": [
+      "src/ai-dev/routes.ts",
+      "src/schema/routes.ts"
+    ],
+    "authPatterns": [
+      "src/security/middleware.ts"
+    ],
+    "databases": [],
+    "cloudProviders": [],
+    "frontendExposure": [],
+    "packageManagers": [
+      "npm"
+    ],
+    "cicd": [],
+    "hasDockerfile": false,
+    "hasTerraform": false,
+    "hasKubernetes": false,
+    "envFiles": [],
+    "configFiles": []
+  },
+  "fileIndex": {
+    "package.json": {
+      "hash": "9e8b58fb205d5804776fba0a14f6ffe755c74367dd8186e78b19128f625a02aa",
+      "size": 1210,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "tsconfig.json": {
+      "hash": "9505f3e295fc8de53aacd8085108ee58c798103bc3fff4736b72fed4ee223195",
+      "size": 766,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "tsconfig.tsbuildinfo": {
+      "hash": "ee7eb427e0e8bf294db050bf6c9fdacc8c41848d451956962f38d0aab3885411",
+      "size": 59660,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "vitest.config.ts": {
+      "hash": "91fe90c0547efb00f6974a6ffbd3ba3819b300edfb330acebe88cee9d76fb01c",
+      "size": 348,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "src/app.ts": {
+      "hash": "654e3310f5913fbf7999ccc618486ee18363a6f6ccc967fca1fd62c85838e5bf",
+      "size": 4145,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "src/container.ts": {
+      "hash": "9a009466d361308b8bc418a0e02adc5ad9ef407fae3beb2af01fecce7ef7a99d",
+      "size": 14268,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "src/errors.ts": {
+      "hash": "935c330ccef3e8f58b7d2d1903f8dcd83aaac80e76d57b65d4aa975100eab477",
+      "size": 1453,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "src/index.ts": {
+      "hash": "abcd1ab314330e27ab01a31eddbebe11a60e5acd3185a86ca46ec458261841ed",
+      "size": 384,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "__tests__/ai-dev.test.ts": {
+      "hash": "9c12590a90cb899b64dba809fd5b9e8334aa85c2c6746f2538481b198a4cacc7",
+      "size": 14053,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "__tests__/app.test.ts": {
+      "hash": "9ad1afe06be090a9bcf08f41db776a592558f0250d182fe3eeae52a12928fae1",
+      "size": 2849,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "__tests__/config.test.ts": {
+      "hash": "01a28a430e98fcea7bb6a9ceccb62ad232a781258655d992b97f81cd91c79d10",
+      "size": 8347,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "__tests__/container.test.ts": {
+      "hash": "e6215ebb3648c092d78a8e55604d51ee06384e75ed4e0dedffe14a9ad94a71a5",
+      "size": 10016,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "__tests__/observability.test.ts": {
+      "hash": "6347ace76fcc1c4653233120879ac40fb6f30622be527434a569ff6b106002e3",
+      "size": 9857,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "__tests__/schema.test.ts": {
+      "hash": "7e7ddce66d8f0028855d9f675dc26a218fd2e24d5ac7127312ed05149042ab8f",
+      "size": 10726,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "__tests__/security.test.ts": {
+      "hash": "9a6f26cd9fc78ac4215fbc34f3d72cef176bd99c7eba76c1723d7cceb0590156",
+      "size": 1756,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "src/ai-dev/index.ts": {
+      "hash": "86918f274404c3d5f0841b4f0365ad69280404a70416eafebb98d866dd01a518",
+      "size": 454,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "src/ai-dev/plugin.ts": {
+      "hash": "e1b0f14f79c003d752d2ac30449a97cbbcba8766d4180e75d2a09fd026a2976d",
+      "size": 2646,
+      "lastScanned": "2026-03-27T07:31:43.684Z"
+    },
+    "src/ai-dev/routes.ts": {
+      "hash": "a30ff9f9a975deade03afd6a2a25d0bb845c4f665c3a55cf5f7a89e5b0a81183",
+      "size": 6794,
+      "lastScanned": "2026-03-27T07:31:43.685Z"
+    },
+    "src/config/index.ts": {
+      "hash": "b8b13b91c978cf1a17ca8d5e64fa44b2907f3ee5464a11f1cce20e8b5b0eeb6d",
+      "size": 8019,
+      "lastScanned": "2026-03-27T07:31:43.685Z"
+    },
+    "src/observability/index.ts": {
+      "hash": "763dda3d6045a91dcd8146dfce299e063637e31e382936bc302a6196c40447cb",
+      "size": 9958,
+      "lastScanned": "2026-03-27T07:31:43.685Z"
+    },
+    "src/security/index.ts": {
+      "hash": "abf992b39ccd0f37802b617cdce871c869ee913d62318b65f7ad8561d7615eec",
+      "size": 360,
+      "lastScanned": "2026-03-27T07:31:43.685Z"
+    },
+    "src/security/middleware.ts": {
+      "hash": "2a6825a4a01271809d1fd5efa22a5afeaf62967794fc3c19e31cb0328f72b2e6",
+      "size": 6126,
+      "lastScanned": "2026-03-27T07:31:43.685Z"
+    },
+    "src/schema/conventions.ts": {
+      "hash": "6dcde3bb3a721aab6540dd52d84475534d4fc151649de16d8520eb794c4a0f42",
+      "size": 7286,
+      "lastScanned": "2026-03-27T07:31:43.685Z"
+    },
+    "src/schema/index.ts": {
+      "hash": "165659ee30c246e5e224a3a2706e2a8d7a30a368f33168722e9fe8471ff86258",
+      "size": 976,
+      "lastScanned": "2026-03-27T07:31:43.685Z"
+    },
+    "src/schema/model.ts": {
+      "hash": "67f6c63f44efc121ab4e49cb82fec66ea6d9b7030c3db2c7a9c997152818249f",
+      "size": 8461,
+      "lastScanned": "2026-03-27T07:31:43.685Z"
+    },
+    "src/schema/routes.ts": {
+      "hash": "ae15486e358a1ec3f2c4c80e87efa4f158dd92b20b826eda22104563c38f62cc",
+      "size": 8089,
+      "lastScanned": "2026-03-27T07:31:43.685Z"
+    }
+  },
+  "lastFindings": {
+    "src/schema/routes.ts": [
+      {
+        "line": 99,
+        "column": 38,
+        "severity": "high",
+        "category": "auth",
+        "rule": "MASS_ASSIGNMENT",
+        "title": "Mass Assignment Vulnerability",
+        "description": "Passing full request body to create/update enables mass assignment attacks.",
+        "matched": ".create(req.body",
+        "confidence": "high",
+        "cwe": "CWE-915",
+        "owasp": "A01:2021",
+        "fix": "Destructure only allowed fields: const { name, email } = req.body; Model.create({ name, email })"
+      },
+      {
+        "line": 99,
+        "column": 46,
+        "severity": "medium",
+        "category": "api",
+        "rule": "API_NO_VALIDATION",
+        "title": "API: No Input Validation",
+        "description": "Request body used without validation. Validate with Zod, Joi, or Yup.",
+        "matched": "req.body)",
+        "confidence": "low",
+        "cwe": "CWE-20",
+        "owasp": "A03:2021",
+        "fix": "Validate: const data = schema.parse(req.body) using Zod or similar"
+      }
+    ],
+    "package.json": [
+      {
+        "line": 0,
+        "column": 0,
+        "severity": "high",
+        "category": "supply-chain",
+        "rule": "DEPCONF_NO_SCOPE_REGISTRY",
+        "title": "Scoped Packages Without Registry Pin: @opentelemetry",
+        "description": "Scoped packages (@opentelemetry) found without a .npmrc pinning the scope to a private registry. An attacker could claim the scope on the public npm registry.",
+        "matched": "@opentelemetry",
+        "confidence": "low",
+        "cwe": null,
+        "owasp": null,
+        "fix": "Add to .npmrc: @yourscope:registry=https://your-private-registry.com/"
+      },
+      {
+        "line": 0,
+        "column": 0,
+        "severity": "high",
+        "category": "supply-chain",
+        "rule": "MISSING_LOCKFILE",
+        "title": "No Lock File Found",
+        "description": "No package-lock.json, yarn.lock, or pnpm-lock.yaml found. Without a lockfile, installs are non-deterministic and vulnerable to dependency confusion.",
+        "matched": "package.json without lockfile",
+        "confidence": "medium",
+        "cwe": null,
+        "owasp": null,
+        "fix": "Run npm install, yarn install, or pnpm install to generate a lockfile, then commit it"
+      },
+      {
+        "line": 0,
+        "column": 0,
+        "severity": "low",
+        "category": "supply-chain",
+        "rule": "UNUSED_DEPENDENCY",
+        "title": "Unused Dependency: @opentelemetry/api",
+        "description": "\"@opentelemetry/api\" is in dependencies but never imported in project code. Unused dependencies increase attack surface.",
+        "matched": "@opentelemetry/api",
+        "confidence": "low",
+        "cwe": null,
+        "owasp": null,
+        "fix": "Remove if unused: npm uninstall @opentelemetry/api"
+      }
+    ],
+    "__tests__/app.test.ts": [
+      {
+        "line": 77,
+        "column": 16,
+        "severity": "medium",
+        "category": "ssrf",
+        "rule": "SSRF_INTERNAL_IP",
+        "title": "SSRF: Internal IP Pattern",
+        "description": "Internal IP address in code. Verify it is not reachable via user-controlled URLs.",
+        "matched": "127.0.0.1",
+        "confidence": "low",
+        "cwe": "CWE-918",
+        "owasp": "A10:2021",
+        "fix": "Block private IP ranges in URL validation for user-supplied URLs"
+      },
+      {
+        "line": 83,
+        "column": 35,
+        "severity": "medium",
+        "category": "ssrf",
+        "rule": "SSRF_INTERNAL_IP",
+        "title": "SSRF: Internal IP Pattern",
+        "description": "Internal IP address in code. Verify it is not reachable via user-controlled URLs.",
+        "matched": "127.0.0.1",
+        "confidence": "low",
+        "cwe": "CWE-918",
+        "owasp": "A10:2021",
+        "fix": "Block private IP ranges in URL validation for user-supplied URLs"
+      }
+    ],
+    "__tests__/config.test.ts": [
+      {
+        "line": 262,
+        "column": 16,
+        "severity": "medium",
+        "category": "ssrf",
+        "rule": "SSRF_INTERNAL_IP",
+        "title": "SSRF: Internal IP Pattern",
+        "description": "Internal IP address in code. Verify it is not reachable via user-controlled URLs.",
+        "matched": "127.0.0.1",
+        "confidence": "low",
+        "cwe": "CWE-918",
+        "owasp": "A10:2021",
+        "fix": "Block private IP ranges in URL validation for user-supplied URLs"
+      }
+    ],
+    "src/security/middleware.ts": [
+      {
+        "line": 91,
+        "column": 37,
+        "severity": "medium",
+        "category": "api",
+        "rule": "API_NO_VALIDATION",
+        "title": "API: No Input Validation",
+        "description": "Request body used without validation. Validate with Zod, Joi, or Yup.",
+        "matched": "request.body)",
+        "confidence": "low",
+        "cwe": "CWE-20",
+        "owasp": "A03:2021",
+        "fix": "Validate: const data = schema.parse(req.body) using Zod or similar"
+      }
+    ]
+  },
+  "stats": {
+    "totalFiles": 26,
+    "totalFindings": 9,
+    "lastScore": 78.3,
+    "lastGrade": "B"
+  }
+}
