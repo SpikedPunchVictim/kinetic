@@ -1,19 +1,17 @@
 /**
  * Security Demo Example
  * Demonstrates: Validation middleware, rate limiting, auth hooks, secure patterns
+ * ADR-002: Uses factory pattern with explicit context
  */
 
 import { z } from 'zod';
 import {
   createApp,
-  createContainer,
   FrameworkError,
-  ErrorCodes,
 } from '@klusterio/kinetic-core';
 import {
   defineModel,
   wrapSuccess,
-  enforcePagination,
 } from '@klusterio/kinetic-core/schema';
 import {
   validateBody,
@@ -22,106 +20,108 @@ import {
   extractBearerToken,
 } from '@klusterio/kinetic-core/security';
 
-console.log('🔒 Security Demo Example\n');
+console.log('🔒 Security Demo Example - Factory Pattern\n');
 
 // ============================================================================
 // 1. Token-based Auth System (simulated)
 // ============================================================================
 
-class TokenManager {
-  constructor() {
-    this.tokens = new Map();
-    this.users = new Map();
-  }
+function createTokenManager() {
+  const tokens = new Map();
+  const users = new Map();
 
-  createToken(userId, expiresIn = 3600) {
-    const token = btoa(JSON.stringify({ userId, exp: Date.now() + expiresIn * 1000 }));
-    this.tokens.set(token, { userId, exp: Date.now() + expiresIn * 1000 });
-    return token;
-  }
+  return {
+    createToken(userId, expiresIn = 3600) {
+      const token = btoa(JSON.stringify({ userId, exp: Date.now() + expiresIn * 1000 }));
+      tokens.set(token, { userId, exp: Date.now() + expiresIn * 1000 });
+      return token;
+    },
 
-  verify(token) {
-    try {
-      const data = JSON.parse(atob(token));
-      const stored = this.tokens.get(token);
-      if (!stored || stored.exp < Date.now()) return null;
-      return { userId: data.userId };
-    } catch {
-      return null;
-    }
-  }
+    verify(token) {
+      try {
+        const data = JSON.parse(atob(token));
+        const stored = tokens.get(token);
+        if (!stored || stored.exp < Date.now()) return null;
+        return { userId: data.userId };
+      } catch {
+        return null;
+      }
+    },
 
-  addUser(userId, email, role) {
-    this.users.set(userId, { id: userId, email, role });
-  }
+    addUser(userId, email, role) {
+      users.set(userId, { id: userId, email, role });
+    },
 
-  getUser(userId) {
-    return this.users.get(userId) || null;
-  }
+    getUser(userId) {
+      return users.get(userId) || null;
+    },
+
+    listUsers() {
+      return Array.from(users.values());
+    },
+  };
 }
 
 // ============================================================================
 // 2. In-Memory Store with Audit Logging
 // ============================================================================
 
-class AuditedStore {
-  constructor(name, logger) {
-    this.name = name;
-    this.data = new Map();
-    this.auditLog = [];
-    this.logger = logger;
-  }
+function createAuditedStore(name, logger) {
+  const data = new Map();
+  const auditLog = [];
 
-  audit(action, userId, details) {
+  function audit(action, userId, details) {
     const entry = {
       timestamp: new Date().toISOString(),
       action,
       userId,
-      resource: this.name,
+      resource: name,
       details,
     };
-    this.auditLog.push(entry);
-    this.logger.info('AUDIT', entry);
+    auditLog.push(entry);
+    logger.info('AUDIT', entry);
   }
 
-  async create(record, userId) {
-    const id = crypto.randomUUID();
-    const newRecord = { ...record, id, createdAt: new Date() };
-    this.data.set(id, newRecord);
-    this.audit('CREATE', userId, { id, resource: this.name });
-    return newRecord;
-  }
+  return {
+    async create(record, userId) {
+      const id = crypto.randomUUID();
+      const newRecord = { ...record, id, createdAt: new Date() };
+      data.set(id, newRecord);
+      audit('CREATE', userId, { id, resource: name });
+      return newRecord;
+    },
 
-  async findAll(userId) {
-    this.audit('READ_ALL', userId, { resource: this.name });
-    return Array.from(this.data.values());
-  }
+    async findAll(userId) {
+      audit('READ_ALL', userId, { resource: name });
+      return Array.from(data.values());
+    },
 
-  async findById(id, userId) {
-    this.audit('READ', userId, { id, resource: this.name });
-    return this.data.get(id) || null;
-  }
+    async findById(id, userId) {
+      audit('READ', userId, { id, resource: name });
+      return data.get(id) || null;
+    },
 
-  async update(id, updates, userId) {
-    const existing = this.data.get(id);
-    if (!existing) return null;
-    const updated = { ...existing, ...updates, updatedAt: new Date() };
-    this.data.set(id, updated);
-    this.audit('UPDATE', userId, { id, resource: this.name, updates: Object.keys(updates) });
-    return updated;
-  }
+    async update(id, updates, userId) {
+      const existing = data.get(id);
+      if (!existing) return null;
+      const updated = { ...existing, ...updates, updatedAt: new Date() };
+      data.set(id, updated);
+      audit('UPDATE', userId, { id, resource: name, updates: Object.keys(updates) });
+      return updated;
+    },
 
-  async delete(id, userId) {
-    const existed = this.data.delete(id);
-    if (existed) {
-      this.audit('DELETE', userId, { id, resource: this.name });
-    }
-    return existed;
-  }
+    async delete(id, userId) {
+      const existed = data.delete(id);
+      if (existed) {
+        audit('DELETE', userId, { id, resource: name });
+      }
+      return existed;
+    },
 
-  getAuditLog() {
-    return [...this.auditLog];
-  }
+    getAuditLog() {
+      return [...auditLog];
+    },
+  };
 }
 
 // ============================================================================
@@ -133,7 +133,7 @@ const UserModel = defineModel({
   fields: {
     id: z.string().uuid(),
     email: z.string().email(),
-    password: z.string().min(8), // Min length validation
+    password: z.string().min(8),
     role: z.enum(['user', 'admin']).default('user'),
     createdAt: z.date(),
   },
@@ -143,7 +143,7 @@ const SensitiveDataModel = defineModel({
   name: 'SensitiveData',
   fields: {
     id: z.string().uuid(),
-    ssn: z.string().regex(/^\d{3}-\d{2}-\d{4}$/), // Format validation
+    ssn: z.string().regex(/^\d{3}-\d{2}-\d{4}$/),
     creditCard: z.string().regex(/^\d{16}$/),
     data: z.string(),
     ownerId: z.string(),
@@ -152,23 +152,39 @@ const SensitiveDataModel = defineModel({
 });
 
 // ============================================================================
-// 4. Container with Security Services
+// 4. Factory Functions for Services
 // ============================================================================
 
-const container = createContainer({
-  logger: async () => ({
+function createLogger() {
+  return {
     info: (msg, data) => console.log(`[INFO] ${msg}`, data ? JSON.stringify(data) : ''),
     error: (msg, err) => console.error(`[ERROR] ${msg}`, err || ''),
     warn: (msg, data) => console.warn(`[WARN] ${msg}`, data || ''),
-  }),
+  };
+}
 
-  tokenManager: async () => new TokenManager(),
+// ============================================================================
+// 5. Application Setup with Factory Pattern
+// ============================================================================
 
-  userStore: async ({ logger }) => new AuditedStore('User', logger),
-  sensitiveStore: async ({ logger }) => new AuditedStore('SensitiveData', logger),
+console.log('Setting up security demo with factory pattern...\n');
 
-  authHook: async ({ tokenManager, userStore }) => {
-    return createAuthHook(async (request) => {
+const config = {
+  port: 3002,
+  host: '127.0.0.1',
+};
+
+const app = await createApp({
+  createAppContext: async () => {
+    const logger = createLogger();
+
+    const tokenManager = createTokenManager();
+
+    const userStore = createAuditedStore('User', logger);
+    const sensitiveStore = createAuditedStore('SensitiveData', logger);
+
+    // Create auth hook using security module
+    const authHook = createAuthHook(async (request) => {
       const token = extractBearerToken(request.headers || {});
       if (!token) {
         return { success: false, error: 'No token provided' };
@@ -186,61 +202,46 @@ const container = createContainer({
 
       return { success: true, user };
     });
+
+    return {
+      logger,
+      tokenManager,
+      userStore,
+      sensitiveStore,
+      authHook,
+    };
   },
 });
 
-// Validate
-const validation = container.validate();
-if (!validation.success) {
-  console.error('❌ Container validation failed:', validation.errors);
-  process.exit(1);
-}
-
-console.log('✅ Container validated');
-
-// ============================================================================
-// 5. Create Application
-// ============================================================================
-
-const app = await createApp({
-  container,
-  config: {
-    port: 3002,
-    host: '127.0.0.1',
-    env: 'development',
-  },
-});
-
-await container.initialize();
-const tokenManager = container.get('tokenManager');
-const userStore = container.get('userStore');
-const sensitiveStore = container.get('sensitiveStore');
+console.log('✅ Application created with factory pattern\n');
 
 // Seed data with tokens
+const { tokenManager, userStore, sensitiveStore } = app.context;
 const adminId = 'admin-' + crypto.randomUUID().slice(9);
 const userId = 'user-' + crypto.randomUUID().slice(9);
+
 tokenManager.addUser(adminId, 'admin@example.com', 'admin');
 tokenManager.addUser(userId, 'user@example.com', 'user');
 
 const adminToken = tokenManager.createToken(adminId);
 const userToken = tokenManager.createToken(userId);
 
-console.log('\n🔐 Test Tokens:');
+console.log('🔐 Test Tokens:');
 console.log(`   Admin: ${adminToken.slice(0, 20)}...`);
-console.log(`   User:  ${userToken.slice(0, 20)}...`);
+console.log(`   User:  ${userToken.slice(0, 20)}...\n`);
 
 // ============================================================================
 // 6. Routes with Security Features
 // ============================================================================
 
-// Authentication middleware
+// Helper middleware
 const requireAuth = async (request, reply) => {
   const authHeader = request.headers?.authorization || '';
   const token = extractBearerToken({ authorization: authHeader });
 
   if (!token) {
     throw new FrameworkError({
-      code: ErrorCodes.VALIDATION_ERROR,
+      code: 'VALIDATION_ERROR',
       message: 'Authorization token required',
       suggestion: 'Include "Authorization: Bearer <token>" header',
     });
@@ -249,7 +250,7 @@ const requireAuth = async (request, reply) => {
   const verified = tokenManager.verify(token);
   if (!verified) {
     throw new FrameworkError({
-      code: ErrorCodes.VALIDATION_ERROR,
+      code: 'VALIDATION_ERROR',
       message: 'Invalid or expired token',
     });
   }
@@ -257,7 +258,7 @@ const requireAuth = async (request, reply) => {
   const user = tokenManager.getUser(verified.userId);
   if (!user) {
     throw new FrameworkError({
-      code: ErrorCodes.VALIDATION_ERROR,
+      code: 'VALIDATION_ERROR',
       message: 'User not found',
     });
   }
@@ -269,12 +270,13 @@ const requireAdmin = async (request, reply) => {
   await requireAuth(request, reply);
   if (request.user.role !== 'admin') {
     throw new FrameworkError({
-      code: ErrorCodes.VALIDATION_ERROR,
+      code: 'VALIDATION_ERROR',
       message: 'Admin access required',
     });
   }
 };
 
+// Auth hook demo endpoint
 const routes = [
   // Health (public)
   {
@@ -288,15 +290,14 @@ const routes = [
     method: 'POST',
     path: '/login',
     preHandler: [
-      rateLimit({ max: 5, window: 300 }), // 5 attempts per 5 minutes
+      rateLimit({ max: 5, window: 300 }),
     ],
     handler: async (request) => {
       const { email, password } = request.body;
 
-      // In real app, verify password hash
       if (email !== 'admin@example.com' && email !== 'user@example.com') {
         throw new FrameworkError({
-          code: ErrorCodes.VALIDATION_ERROR,
+          code: 'VALIDATION_ERROR',
           message: 'Invalid credentials',
         });
       }
@@ -316,7 +317,7 @@ const routes = [
     method: 'GET',
     path: '/public-data',
     preHandler: [
-      rateLimit({ max: 100, window: 60 }), // 100 requests per minute
+      rateLimit({ max: 100, window: 60 }),
     ],
     handler: async () => wrapSuccess({ message: 'Public data' }),
   },
@@ -342,7 +343,6 @@ const routes = [
     preHandler: [requireAuth],
     handler: async (request) => {
       const users = await userStore.findAll(request.user.id);
-      // Don't expose passwords
       const safeUsers = users.map(({ password, ...user }) => user);
       return wrapSuccess(safeUsers);
     },
@@ -372,7 +372,6 @@ const routes = [
         { ...request.body, ownerId: request.user.id },
         request.user.id
       );
-      // Mask sensitive fields in response
       const safeData = { ...data, ssn: '***-**-' + data.ssn.slice(-4) };
       return wrapSuccess(safeData);
     },
@@ -386,13 +385,11 @@ const routes = [
     handler: async (request) => {
       const data = await sensitiveStore.findById(request.params.id, request.user.id);
       if (!data) {
-        throw new FrameworkError({ code: ErrorCodes.VALIDATION_ERROR, message: 'Not found' });
+        throw new FrameworkError({ code: 'VALIDATION_ERROR', message: 'Not found' });
       }
-      // Users can only access their own data (or admins)
       if (data.ownerId !== request.user.id && request.user.role !== 'admin') {
-        throw new FrameworkError({ code: ErrorCodes.VALIDATION_ERROR, message: 'Access denied' });
+        throw new FrameworkError({ code: 'VALIDATION_ERROR', message: 'Access denied' });
       }
-      // Mask in response
       const safeData = { ...data, ssn: '***-**-' + data.ssn.slice(-4), creditCard: '****' + data.creditCard.slice(-4) };
       return wrapSuccess(safeData);
     },
@@ -410,22 +407,26 @@ const routes = [
   },
 ];
 
-app.registerRoutes(routes);
+// Register routes
+for (const route of routes) {
+  app.route(route);
+}
 
 // ============================================================================
-// 6. Start Server
+// 7. Start Server
 // ============================================================================
 
-await app.start();
+await app.ready();
+await app.listen({ port: config.port, host: config.host });
 
-console.log('\n✅ Security Demo Server running!');
-console.log(`\n📡 API Endpoints:`);
-console.log(`   GET  http://127.0.0.1:3002/health`);
-console.log(`   POST http://127.0.0.1:3002/login (rate limited: 5/5min)`);
-console.log(`   GET  http://127.0.0.1:3002/public-data (rate limited: 100/min)`);
-console.log(`   POST http://127.0.0.1:3002/users (auth + validation required)`);
-console.log(`   GET  http://127.0.0.1:3002/audit-log (admin only)`);
-console.log(`   POST http://127.0.0.1:3002/sensitive-data (strict validation)`);
-console.log(`   POST http://127.0.0.1:3002/admin/reset-cache (admin only)`);
+console.log('✅ Security Demo Server running!\n');
+console.log('📡 API Endpoints:');
+console.log(`   GET  http://${config.host}:${config.port}/health`);
+console.log(`   POST http://${config.host}:${config.port}/login (rate limited: 5/5min)`);
+console.log(`   GET  http://${config.host}:${config.port}/public-data (rate limited: 100/min)`);
+console.log(`   POST http://${config.host}:${config.port}/users (auth + validation required)`);
+console.log(`   GET  http://${config.host}:${config.port}/audit-log (admin only)`);
+console.log(`   POST http://${config.host}:${config.port}/sensitive-data (strict validation)`);
+console.log(`   POST http://${config.host}:${config.port}/admin/reset-cache (admin only)`);
 
-export { app, container, tokenManager, userStore };
+export { app, tokenManager, userStore };

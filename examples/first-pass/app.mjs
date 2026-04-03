@@ -1,20 +1,17 @@
 /**
  * First Pass Application - Comprehensive Framework Test
- * Uses every feature of @klusterio/kinetic-core
+ * Uses every feature of @klusterio/kinetic-core with factory pattern (ADR-002)
  */
 
 import { z } from 'zod';
 import {
   createApp,
-  createContainer,
   FrameworkError,
-  ErrorCodes,
 } from '@klusterio/kinetic-core';
 import {
   defineModel,
   generateUrlPath,
   wrapSuccess,
-  wrapList,
   enforcePagination,
 } from '@klusterio/kinetic-core/schema';
 import {
@@ -22,11 +19,13 @@ import {
   rateLimit,
 } from '@klusterio/kinetic-core/security';
 
+console.log('📦 First Pass Application - ADR-002 Factory Pattern\n');
+
 // ============================================================================
 // 1. Define Models (Schema Module)
 // ============================================================================
 
-console.log('📦 Phase 1: Defining Models...');
+console.log('Phase 1: Defining Models...');
 
 const UserModel = defineModel({
   name: 'User',
@@ -67,174 +66,178 @@ console.log(`   - Generated URL for User: ${generateUrlPath('User')}`);
 console.log(`   - Generated URL for Post: ${generateUrlPath('Post')}`);
 
 // ============================================================================
-// 2. Create DI Container (Container Module)
+// 2. Service Classes with Strong Typing
 // ============================================================================
 
-console.log('\n🔧 Phase 2: Creating DI Container...');
+console.log('\nPhase 2: Creating Service Classes...');
 
-const container = createContainer({
-  // Infrastructure services (no dependencies)
-  logger: async () => ({
-    info: (msg, data) => console.log(`[INFO] ${msg}`, data || ''),
-    error: (msg, err) => console.error(`[ERROR] ${msg}`, err || ''),
-    warn: (msg, data) => console.warn(`[WARN] ${msg}`, data || ''),
-  }),
-
-  // Config service
-  config: async () => ({
-    appName: 'First Pass App',
-    version: '1.0.0',
-    env: process.env.NODE_ENV || 'development',
-    port: 3001,
-  }),
-
-  // Mock database (depends on logger)
-  db: async ({ logger }) => {
-    logger.info('Initializing database...');
-    const users = new Map();
-    const posts = new Map();
-
-    return {
-      users,
-      posts,
-      query: (table) => {
-        const data = table === 'users' ? users : posts;
-        return Array.from(data.values());
-      },
-      insert: (table, record) => {
-        const data = table === 'users' ? users : posts;
-        data.set(record.id, record);
-        return record;
-      },
-      findById: (table, id) => {
-        const data = table === 'users' ? users : posts;
-        return data.get(id) || null;
-      },
-      update: (table, id, record) => {
-        const data = table === 'users' ? users : posts;
-        if (!data.has(id)) return null;
-        const existing = data.get(id);
-        const updated = { ...existing, ...record, updatedAt: new Date() };
-        data.set(id, updated);
-        return updated;
-      },
-      delete: (table, id) => {
-        const data = table === 'users' ? users : posts;
-        return data.delete(id);
-      },
-    };
-  },
-
-  // User store (depends on db and logger)
-  userStore: async ({ db, logger }) => ({
-    async create(data) {
-      logger.info('Creating user', { email: data.email });
-      const user = {
-        id: crypto.randomUUID(),
-        ...data,
-        createdAt: new Date(),
-      };
-      return db.insert('users', user);
-    },
-    async findById(id) {
-      return db.findById('users', id);
-    },
-    async findAll() {
-      return db.query('users');
-    },
-    async update(id, data) {
-      return db.update('users', id, data);
-    },
-    async delete(id) {
-      return db.delete('users', id);
-    },
-  }),
-
-  // Post store (depends on db, logger)
-  postStore: async ({ db, logger }) => ({
-    async create(data) {
-      logger.info('Creating post', { title: data.title });
-      const post = {
-        id: crypto.randomUUID(),
-        ...data,
-        createdAt: new Date(),
-      };
-      return db.insert('posts', post);
-    },
-    async findById(id) {
-      return db.findById('posts', id);
-    },
-    async findByAuthor(authorId) {
-      return db.query('posts').filter(p => p.authorId === authorId);
-    },
-    async findAll() {
-      return db.query('posts');
-    },
-    async update(id, data) {
-      return db.update('posts', id, data);
-    },
-    async delete(id) {
-      return db.delete('posts', id);
-    },
-  }),
-});
-
-// Validate container before initialization
-console.log('🔍 Validating container...');
-const validation = container.validate();
-if (!validation.success) {
-  console.error('❌ Container validation failed:', validation.errors);
-  process.exit(1);
+// Infrastructure - Logger
+class Logger {
+  info(msg, data) {
+    console.log(`[INFO] ${msg}`, data || '');
+  }
+  error(msg, err) {
+    console.error(`[ERROR] ${msg}`, err || '');
+  }
+  warn(msg, data) {
+    console.warn(`[WARN] ${msg}`, data || '');
+  }
 }
 
-console.log('✅ Container validated');
-console.log(`   - Services: ${validation.resolvedOrder?.length}`);
-console.log(`   - Initialization order: ${validation.resolvedOrder?.join(' → ')}`);
+// Infrastructure - InMemoryDatabase
+class InMemoryDatabase {
+  constructor(logger) {
+    this.logger = logger;
+    this.users = new Map();
+    this.posts = new Map();
+    logger.info('Initializing database...');
+  }
+
+  query(table) {
+    const data = table === 'users' ? this.users : this.posts;
+    return Array.from(data.values());
+  }
+
+  insert(table, record) {
+    const data = table === 'users' ? this.users : this.posts;
+    data.set(record.id, record);
+    return record;
+  }
+
+  findById(table, id) {
+    const data = table === 'users' ? this.users : this.posts;
+    return data.get(id) || null;
+  }
+
+  update(table, id, record) {
+    const data = table === 'users' ? this.users : this.posts;
+    if (!data.has(id)) return null;
+    const existing = data.get(id);
+    const updated = { ...existing, ...record, updatedAt: new Date() };
+    data.set(id, updated);
+    return updated;
+  }
+
+  delete(table, id) {
+    const data = table === 'users' ? this.users : this.posts;
+    return data.delete(id);
+  }
+}
+
+// Service - UserStore
+class UserStore {
+  constructor(db, logger) {
+    this.db = db;
+    this.logger = logger;
+  }
+
+  async create(data) {
+    this.logger.info('Creating user', { email: data.email });
+    const user = {
+      id: crypto.randomUUID(),
+      ...data,
+      createdAt: new Date(),
+    };
+    return this.db.insert('users', user);
+  }
+
+  async findById(id) {
+    return this.db.findById('users', id);
+  }
+
+  async findAll() {
+    return this.db.query('users');
+  }
+
+  async update(id, data) {
+    return this.db.update('users', id, data);
+  }
+
+  async delete(id) {
+    return this.db.delete('users', id);
+  }
+}
+
+// Service - PostStore
+class PostStore {
+  constructor(db, logger) {
+    this.db = db;
+    this.logger = logger;
+  }
+
+  async create(data) {
+    this.logger.info('Creating post', { title: data.title });
+    const post = {
+      id: crypto.randomUUID(),
+      ...data,
+      createdAt: new Date(),
+    };
+    return this.db.insert('posts', post);
+  }
+
+  async findById(id) {
+    return this.db.findById('posts', id);
+  }
+
+  async findByAuthor(authorId) {
+    return this.db.query('posts').filter(p => p.authorId === authorId);
+  }
+
+  async findAll() {
+    return this.db.query('posts');
+  }
+
+  async update(id, data) {
+    return this.db.update('posts', id, data);
+  }
+
+  async delete(id) {
+    return this.db.delete('posts', id);
+  }
+}
+
+console.log('✅ Service classes defined');
 
 // ============================================================================
-// 3. Introspection Test (AI Dev Module)
+// 3. Create Application (App Module with Class Instances)
 // ============================================================================
 
-console.log('\n🔍 Phase 3: Container Introspection...');
+console.log('\nPhase 3: Creating Application...');
 
-const introspection = container.introspect();
-console.log('✅ Introspection data:');
-console.log(`   - Total services: ${introspection.services.length}`);
-console.log(`   - Cycles detected: ${introspection.cycles.length}`);
-console.log('   - Service graph:');
-introspection.services.forEach(service => {
-  const deps = service.dependencies.length > 0 ? ` ← [${service.dependencies.join(', ')}]` : '';
-  console.log(`     • ${String(service.name)} (${service.scope})${deps}`);
-});
-
-// ============================================================================
-// 4. Create Application (App Module)
-// ============================================================================
-
-console.log('\n🚀 Phase 4: Creating Application...');
+// Define the context type
+// AppContext = { logger: Logger, db: InMemoryDatabase, userStore: UserStore, postStore: PostStore }
 
 const app = await createApp({
-  container,
-  config: {
-    port: 3001,
-    host: '127.0.0.1',
-    env: 'development',
+  createAppContext: async () => {
+    // Use class constructors for strong typing
+    const logger = new Logger();
+    const db = new InMemoryDatabase(logger);
+    const userStore = new UserStore(db, logger);
+    const postStore = new PostStore(db, logger);
+
+    logger.info('Application context initialized');
+
+    return {
+      logger,
+      db,
+      userStore,
+      postStore,
+    };
   },
 });
 
 console.log('✅ Application created');
-console.log(`   - Fastify server: ready`);
+console.log('   - Fastify server: ready');
 
 // ============================================================================
-// 5. Create Working Routes (with actual handlers)
+// 4. Create Working Routes
 // ============================================================================
 
-console.log('\n📡 Phase 5: Registering Routes...');
+console.log('\nPhase 4: Registering Routes...');
 
-// Get stores from container
-const userStore = container.get('userStore');
-const postStore = container.get('postStore');
-const logger = container.get('logger');
+// Get services from context via factory
+const context = app.context;
+const { userStore, postStore, logger } = context;
 
 // Validate middleware for users
 const validateUserMiddleware = validateBody(UserModel.inputSchema);
@@ -249,17 +252,7 @@ const routes = [
       return wrapSuccess({
         status: 'healthy',
         timestamp: new Date().toISOString(),
-        services: introspection.services.map(s => String(s.name))
       });
-    },
-  },
-
-  // Container introspection
-  {
-    method: 'GET',
-    path: '/__introspect/container',
-    handler: async () => {
-      return wrapSuccess(container.introspect());
     },
   },
 
@@ -375,7 +368,7 @@ const routes = [
       const user = await userStore.findById(request.params.id);
       if (!user) {
         throw new FrameworkError({
-          code: ErrorCodes.VALIDATION_ERROR,
+          code: 'VALIDATION_ERROR',
           message: 'User not found',
           suggestion: 'Check that the user ID is valid',
         });
@@ -393,8 +386,9 @@ const routes = [
       const user = await userStore.update(request.params.id, request.body);
       if (!user) {
         throw new FrameworkError({
-          code: ErrorCodes.VALIDATION_ERROR,
+          code: 'VALIDATION_ERROR',
           message: 'User not found',
+          suggestion: 'Check that the user ID is valid',
         });
       }
       return wrapSuccess(user);
@@ -444,8 +438,10 @@ const routes = [
       const post = await postStore.findById(request.params.id);
       if (!post) {
         throw new FrameworkError({
-          code: ErrorCodes.VALIDATION_ERROR,
-          message: 'Post not found',
+          c: 'E_NOTFOUND',
+          s: 'Post',
+          r: 'id_invalid',
+          t: Date.now(),
         });
       }
       return wrapSuccess(post);
@@ -461,8 +457,10 @@ const routes = [
       const post = await postStore.update(request.params.id, request.body);
       if (!post) {
         throw new FrameworkError({
-          code: ErrorCodes.VALIDATION_ERROR,
-          message: 'Post not found',
+          c: 'E_NOTFOUND',
+          s: 'Post',
+          r: 'id_invalid',
+          t: Date.now(),
         });
       }
       return wrapSuccess(post);
@@ -491,21 +489,23 @@ const routes = [
   },
 ];
 
-// Register all routes
-app.registerRoutes(routes);
+// Register routes directly on Fastify
+for (const route of routes) {
+  app.route(route);
+}
 
 console.log('✅ Routes registered:');
 console.log(`   - Health: GET /health`);
-console.log(`   - Introspection: GET /__introspect/container, /__introspect/models`);
+console.log(`   - Introspection: GET /__introspect/models`);
 console.log(`   - Seed: POST /seed`);
 console.log(`   - Users: GET/POST/PUT/DELETE /users`);
 console.log(`   - Posts: GET/POST/PUT/DELETE /posts`);
 
 // ============================================================================
-// 6. Pagination Test (Conventions Module)
+// 5. Pagination Test (Conventions Module)
 // ============================================================================
 
-console.log('\n📄 Phase 6: Testing Pagination...');
+console.log('\nPhase 5: Testing Pagination...');
 
 const testData = Array.from({ length: 50 }, (_, i) => ({
   id: `item-${i}`,
@@ -519,37 +519,35 @@ console.log(`   - Has more: ${paginated.pagination.hasMore}`);
 console.log(`   - Total count: ${paginated.pagination.totalCount}`);
 
 // ============================================================================
-// 7. Framework Error Handling Test
+// 6. Framework Error Handling Test
 // ============================================================================
 
-console.log('\n⚠️  Phase 7: Testing Error Handling...');
+console.log('\nPhase 6: Testing Error Handling...');
 
 const testError = new FrameworkError({
-  code: ErrorCodes.VALIDATION_ERROR,
+  code: 'VALIDATION_ERROR',
   message: 'Test validation error',
   suggestion: 'This is a test suggestion',
-  docsUrl: '',
-  field: 'email',
 });
 
 console.log('✅ FrameworkError created:');
 console.log(`   - Code: ${testError.code}`);
 console.log(`   - Message: ${testError.message}`);
 console.log(`   - Suggestion: ${testError.suggestion}`);
-console.log(`   - JSON: ${JSON.stringify(testError.toJSON())}`);
+console.log(`   - JSON: ${JSON.stringify(testError)}`);
 
 // ============================================================================
-// 8. Start Server
+// 7. Start Server
 // ============================================================================
 
-console.log('\n🌟 Phase 8: Starting Server...');
+console.log('\nPhase 7: Starting Server...');
 
-await app.start();
+await app.ready();
+await app.listen({ port: 3001, host: '127.0.0.1' });
 
 console.log('✅ Server started successfully!');
 console.log(`\n📡 API Endpoints:`);
 console.log(`   - GET  http://127.0.0.1:3001/health`);
-console.log(`   - GET  http://127.0.0.1:3001/__introspect/container`);
 console.log(`   - GET  http://127.0.0.1:3001/__introspect/models`);
 console.log(`   - POST http://127.0.0.1:3001/seed`);
 console.log(`   - GET  http://127.0.0.1:3001/users`);
@@ -560,7 +558,7 @@ console.log(`   - POST http://127.0.0.1:3001/posts`);
 console.log(`\n🔍 Try these commands:`);
 console.log(`   curl http://127.0.0.1:3001/health`);
 console.log(`   curl -X POST http://127.0.0.1:3001/seed`);
-console.log(`   curl http://127.0.0.1:3001/__introspect/container`);
+console.log(`   curl http://127.0.0.1:3001/__introspect/models`);
 console.log(`   curl http://127.0.0.1:3001/users`);
 
 // Keep server running

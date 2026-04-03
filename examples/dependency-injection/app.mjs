@@ -1,75 +1,28 @@
 /**
  * Dependency Injection Example
- * Demonstrates: Advanced DI container with multiple layers, circular dependency detection
+ * Demonstrates: Factory pattern with explicit dependencies (ADR-002)
+ * Shows layered architecture with clear dependency chains
  */
 
 import { z } from 'zod';
 import {
   createApp,
-  createContainer,
   FrameworkError,
-  ErrorCodes,
 } from '@klusterio/kinetic-core';
 import { defineModel, wrapSuccess } from '@klusterio/kinetic-core/schema';
 import { validateBody } from '@klusterio/kinetic-core/security';
 
-console.log('🔧 Dependency Injection Example\n');
+console.log('🔧 Dependency Injection Example - Factory Pattern\n');
 
 // ============================================================================
-// 1. Infrastructure Layer
+// 1. Infrastructure Layer - Factory Functions
 // ============================================================================
 
-class Database {
-  constructor({ host, port, name }) {
-    this.host = host;
-    this.port = port;
-    this.database = name;
-    this.connected = false;
-  }
-
-  async connect() {
-    this.connected = true;
-    console.log(`🔌 Database connected: ${this.host}:${this.port}/${this.database}`);
-    return this;
-  }
-
-  async query(sql) {
-    if (!this.connected) throw new Error('Database not connected');
-    console.log(`📊 Query: ${sql}`);
-    return [];
-  }
-}
-
-class Cache {
-  constructor() {
-    this.data = new Map();
-    this.hits = 0;
-    this.misses = 0;
-  }
-
-  get(key) {
-    const value = this.data.get(key);
-    if (value) {
-      this.hits++;
-      return value;
-    }
-    this.misses++;
-    return null;
-  }
-
-  set(key, value, ttl = 3600) {
-    this.data.set(key, { value, expires: Date.now() + ttl * 1000 });
-  }
-
-  getStats() {
-    return { hits: this.hits, misses: this.misses, size: this.data.size };
-  }
-}
-
+// Infrastructure - Logger
 class Logger {
-  constructor({ format = 'json', level = 'info' } = {}) {
-    this.format = format;
-    this.level = level;
+  constructor(options = {}) {
+    this.format = options.format || 'json';
+    this.level = options.level || 'info';
     this.logs = [];
   }
 
@@ -81,255 +34,383 @@ class Logger {
       ...meta,
     };
     this.logs.push(entry);
-    console.log(`[${level.toUpperCase()}] ${message}`, meta);
+
+    if (this.format === 'json') {
+      console.log(JSON.stringify(entry));
+    } else {
+      console.log(`[${level.toUpperCase()}] ${message}`, meta);
+    }
   }
 
   info(msg, meta) { this.log('info', msg, meta); }
+  warn(msg, meta) { this.log('warn', msg, meta); }
   error(msg, meta) { this.log('error', msg, meta); }
   debug(msg, meta) { this.log('debug', msg, meta); }
-
-  getRecent(count = 10) {
-    return this.logs.slice(-count);
-  }
+  trace(msg, meta) { this.log('trace', msg, meta); }
+  getRecent(count = 10) { return this.logs.slice(-count); }
 }
 
-class MetricsCollector {
-  constructor({ logger }) {
+// Infrastructure - InMemoryDatabase
+class InMemoryDatabase {
+  constructor(config, logger) {
+    this.host = config.host;
+    this.port = config.port;
+    this.database = config.name;
     this.logger = logger;
-    this.metrics = new Map();
+    this.connected = false;
+    this.tables = new Map();
   }
 
-  increment(name, tags = {}) {
-    const key = `${name}:${JSON.stringify(tags)}`;
-    const current = this.metrics.get(key) || 0;
-    this.metrics.set(key, current + 1);
+  async connect() {
+    this.connected = true;
+    this.logger.info('Database connected', { host: this.host, port: this.port });
+    return this;
   }
 
-  timing(name, duration, tags = {}) {
-    this.logger.debug('Metric timing', { name, duration, tags });
-  }
-
-  gauge(name, value, tags = {}) {
-    this.logger.debug('Metric gauge', { name, value, tags });
-  }
-
-  getReport() {
-    const report = {};
-    for (const [key, value] of this.metrics) {
-      report[key] = value;
-    }
-    return report;
-  }
-}
-
-// ============================================================================
-// 2. Repository Layer
-// ============================================================================
-
-class Repository {
-  constructor({ db, cache, logger }) {
-    this.db = db;
-    this.cache = cache;
-    this.logger = logger;
-  }
-
-  async findById(table, id) {
-    const cacheKey = `${table}:${id}`;
-    const cached = this.cache.get(cacheKey);
-    if (cached) {
-      this.logger.debug('Cache hit', { table, id });
-      return cached.value;
-    }
-
-    this.logger.debug('Cache miss', { table, id });
-    const result = await this.db.query(`SELECT * FROM ${table} WHERE id = ?`, [id]);
-    if (result[0]) {
-      this.cache.set(cacheKey, result[0]);
-    }
-    return result[0] || null;
-  }
-
-  async findAll(table) {
-    return this.db.query(`SELECT * FROM ${table}`);
-  }
-}
-
-// ============================================================================
-// 3. Service Layer
-// ============================================================================
-
-class UserService {
-  constructor({ repository, cache, logger, metrics }) {
-    this.repository = repository;
-    this.cache = cache;
-    this.logger = logger;
-    this.metrics = metrics;
-  }
-
-  async findById(id) {
-    this.metrics.increment('user.find', { by: 'id' });
-    return this.repository.findById('users', id);
-  }
-
-  async authenticate(email, password) {
-    this.logger.info('Authenticating user', { email });
-    this.metrics.increment('auth.attempt');
-    // Authentication logic here
-    return { id: '1', email, role: 'user' };
-  }
-
-  async getStats() {
-    return {
-      cacheStats: this.cache.getStats(),
-    };
-  }
-}
-
-class OrderService {
-  constructor({ repository, userService, cache, logger, metrics }) {
-    this.repository = repository;
-    this.userService = userService;
-    this.cache = cache;
-    this.logger = logger;
-    this.metrics = metrics;
-  }
-
-  async createOrder(userId, items) {
-    this.logger.info('Creating order', { userId, itemCount: items.length });
-    this.metrics.increment('order.create');
-
-    const user = await this.userService.findById(userId);
-    if (!user) {
-      throw new Error('User not found');
-    }
-
-    const order = {
-      id: crypto.randomUUID(),
-      userId,
-      items,
-      total: items.reduce((sum, item) => sum + item.price, 0),
-      createdAt: new Date(),
-    };
-
-    return order;
-  }
-
-  async getOrderHistory(userId) {
-    this.logger.info('Getting order history', { userId });
+  query(sql) {
+    if (!this.connected) throw new Error('Database not connected');
+    this.logger.debug('Database query', { sql });
     return [];
   }
+
+  findById(table, id) {
+    this.logger.debug('Database findById', { table, id });
+    return { id, table, data: 'mock' };
+  }
+
+  findAll(table) {
+    this.logger.debug('Database findAll', { table });
+    return [];
+  }
+
+  insert(table, record) {
+    this.logger.info('Database insert', { table, id: record.id });
+    return record;
+  }
+
+  update(table, id, record) {
+    this.logger.debug('Database update', { table, id });
+    return record;
+  }
+
+  delete(table, id) {
+    this.logger.debug('Database delete', { table, id });
+    return true;
+  }
 }
 
-class NotificationService {
-  constructor({ logger, metrics }) {
-    this.logger = logger;
-    this.metrics = metrics;
+// Infrastructure - Cache
+class InMemoryCache {
+  constructor() {
+    this.data = new Map();
+    this.hits = 0;
+    this.misses = 0;
   }
 
-  async sendEmail(to, subject, body) {
-    this.logger.info('Sending email', { to, subject });
-    this.metrics.increment('notification.email');
-    return { sent: true };
+  get(key) {
+    const value = this.data.get(key);
+    if (value && value.expires > Date.now()) {
+      this.hits++;
+      return value.value;
+    }
+    this.misses++;
+    return null;
   }
 
-  async sendNotification(userId, message) {
-    this.logger.info('Sending notification', { userId, message });
-    this.metrics.increment('notification.push');
-    return { sent: true };
+  set(key, value, ttl = 3600) {
+    this.data.set(key, { value, expires: Date.now() + ttl * 1000 });
   }
+
+  delete(key) {
+    return this.data.delete(key);
+  }
+
+  getStats() {
+    return { hits: this.hits, misses: this.misses, size: this.data.size };
+  }
+
+  clear() {
+    this.data.clear();
+    this.hits = 0;
+    this.misses = 0;
+  }
+}
+
+function createLogger(options = {}) {
+  const { format = 'json', level = 'info' } = options;
+  const logs = [];
+  const levels = { trace: 10, debug: 20, info: 30, warn: 40, error: 50 };
+  const minLevel = levels[level] || 30;
+
+  function shouldLog(logLevel) {
+    return levels[logLevel] >= minLevel;
+  }
+
+  function log(logLevel, message, meta = {}) {
+    if (!shouldLog(logLevel)) return;
+
+    const entry = {
+      timestamp: new Date().toISOString(),
+      level: logLevel,
+      message,
+      ...meta,
+    };
+    logs.push(entry);
+
+    if (format === 'json') {
+      console.log(JSON.stringify(entry));
+    } else {
+      console.log(`[${logLevel.toUpperCase()}] ${message}`, meta);
+    }
+  }
+
+  return {
+    info: (msg, meta) => log('info', msg, meta),
+    warn: (msg, meta) => log('warn', msg, meta),
+    error: (msg, meta) => log('error', msg, meta),
+    debug: (msg, meta) => log('debug', msg, meta),
+    trace: (msg, meta) => log('trace', msg, meta),
+    getRecent: (count = 10) => logs.slice(-count),
+  };
+}
+
+function createMetricsCollector(logger) {
+  const metrics = new Map();
+
+  return {
+    increment(name, tags = {}) {
+      const key = `${name}:${JSON.stringify(tags)}`;
+      const current = metrics.get(key) || 0;
+      metrics.set(key, current + 1);
+    },
+
+    timing(name, duration, tags = {}) {
+      logger.debug('Metric timing', { name, duration, tags });
+    },
+
+    gauge(name, value, tags = {}) {
+      logger.debug('Metric gauge', { name, value, tags });
+    },
+
+    getReport() {
+      const report = {};
+      for (const [key, value] of metrics) {
+        report[key] = value;
+      }
+      return report;
+    },
+
+    clear() {
+      metrics.clear();
+    },
+  };
 }
 
 // ============================================================================
-// 4. Container Setup
+// 2. Repository Layer - Factory Functions
 // ============================================================================
 
-const container = createContainer({
-  // Infrastructure services (no dependencies)
-  dbConfig: async () => ({
-    host: 'localhost',
-    port: 5432,
-    name: 'myapp',
-  }),
+function createRepository(db, cache, logger) {
+  return {
+    async findById(table, id) {
+      const cacheKey = `${table}:${id}`;
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        logger.debug('Cache hit', { table, id });
+        return cached;
+      }
 
-  db: async ({ dbConfig, logger }) => {
-    logger.info('Initializing database connection...');
-    const db = new Database(dbConfig);
-    await db.connect();
-    return db;
-  },
+      logger.debug('Cache miss', { table, id });
+      const result = await db.findById(table, id);
+      if (result) {
+        cache.set(cacheKey, result);
+      }
+      return result;
+    },
 
-  cache: async ({ logger }) => {
-    logger.info('Initializing cache...');
-    return new Cache();
-  },
+    async findAll(table) {
+      return db.findAll(table);
+    },
 
-  logger: async () => {
-    const logger = new Logger({ format: 'json', level: 'debug' });
-    logger.info('Logger initialized');
-    return logger;
-  },
+    async create(table, data) {
+      const record = { ...data, id: data.id || crypto.randomUUID() };
+      return db.insert(table, record);
+    },
 
-  metrics: async ({ logger }) => {
-    logger.info('Initializing metrics...');
-    return new MetricsCollector({ logger });
-  },
+    async update(table, id, data) {
+      const result = await db.update(table, id, data);
+      cache.delete(`${table}:${id}`);
+      return result;
+    },
 
-  // Repository layer (depends on infrastructure)
-  repository: async ({ db, cache, logger }) => {
-    logger.info('Initializing repository...');
-    return new Repository({ db, cache, logger });
-  },
+    async delete(table, id) {
+      cache.delete(`${table}:${id}`);
+      return db.delete(table, id);
+    },
+  };
+}
 
-  // Service layer (depends on repositories and infrastructure)
-  userService: async ({ repository, cache, logger, metrics }) => {
-    logger.info('Initializing user service...');
-    return new UserService({ repository, cache, logger, metrics });
-  },
+// ============================================================================
+// 3. Service Layer - Factory Functions
+// ============================================================================
 
-  orderService: async ({ repository, userService, cache, logger, metrics }) => {
-    logger.info('Initializing order service...');
-    return new OrderService({ repository, userService, cache, logger, metrics });
-  },
-
-  notificationService: async ({ logger, metrics }) => {
-    logger.info('Initializing notification service...');
-    return new NotificationService({ logger, metrics });
+const UserModel = defineModel({
+  name: 'User',
+  fields: {
+    id: z.string().uuid(),
+    email: z.string().email(),
+    name: z.string().min(1).max(100),
+    role: z.enum(['user', 'admin']).default('user'),
+    createdAt: z.date(),
   },
 });
 
-// Validate container
-console.log('🔍 Validating container...');
-const validation = container.validate();
-if (!validation.success) {
-  console.error('❌ Container validation failed:', validation.errors);
-  process.exit(1);
+function createUserService(repository, cache, logger, metrics) {
+  return {
+    async findById(id) {
+      metrics.increment('user.find', { by: 'id' });
+      return repository.findById('users', id);
+    },
+
+    async findAll() {
+      metrics.increment('user.find', { by: 'all' });
+      return repository.findAll('users');
+    },
+
+    async create(data) {
+      logger.info('Creating user', { email: data.email });
+      metrics.increment('user.create');
+      return repository.create('users', data);
+    },
+
+    async authenticate(email, password) {
+      logger.info('Authenticating user', { email });
+      metrics.increment('auth.attempt');
+      // Mock authentication
+      return { id: crypto.randomUUID(), email, role: 'user' };
+    },
+
+    async getStats() {
+      return {
+        cacheStats: cache.getStats(),
+      };
+    },
+  };
 }
 
-console.log('✅ Container validated');
-console.log('   Initialization order:', validation.resolvedOrder.join(' → '));
+function createOrderService(repository, userService, cache, logger, metrics) {
+  return {
+    async createOrder(userId, items) {
+      logger.info('Creating order', { userId, itemCount: items.length });
+      metrics.increment('order.create');
+
+      const user = await userService.findById(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      const order = {
+        id: crypto.randomUUID(),
+        userId,
+        items,
+        total: items.reduce((sum, item) => sum + (item.price || 0), 0),
+        createdAt: new Date(),
+      };
+
+      return order;
+    },
+
+    async getOrderHistory(userId) {
+      logger.info('Getting order history', { userId });
+      return [];
+    },
+
+    async findById(id) {
+      metrics.increment('order.find');
+      return repository.findById('orders', id);
+    },
+  };
+}
+
+function createNotificationService(logger, metrics) {
+  return {
+    async sendEmail(to, subject, body) {
+      logger.info('Sending email', { to, subject });
+      metrics.increment('notification.email');
+      return { sent: true, to, subject };
+    },
+
+    async sendNotification(userId, message) {
+      logger.info('Sending notification', { userId, message });
+      metrics.increment('notification.push');
+      return { sent: true, userId };
+    },
+  };
+}
 
 // ============================================================================
-// 5. Create Application
+// 4. Application Setup with Factory Pattern (ADR-002)
 // ============================================================================
 
+console.log('Setting up application with factory pattern...\n');
+
+// Configuration
+const config = {
+  db: { host: 'localhost', port: 5432, name: 'myapp' },
+  port: 3001,
+  host: '127.0.0.1',
+};
+
+// Create app with explicit context factory
 const app = await createApp({
-  container,
-  config: {
-    port: 3001, // Different port
-    host: '127.0.0.1',
-    env: 'development',
+  createAppContext: async () => {
+    // Initialize in explicit order - no magic dependency injection
+    const logger = createLogger({ format: 'pretty', level: 'info' });
+    logger.info('Initializing application context...');
+
+    const db = createDatabase(config.db, logger);
+    await db.connect();
+
+    const cache = createCache();
+    logger.info('Cache initialized');
+
+    const metrics = createMetricsCollector(logger);
+    logger.info('Metrics collector initialized');
+
+    const repository = createRepository(db, cache, logger);
+    logger.info('Repository initialized');
+
+    const userService = createUserService(repository, cache, logger, metrics);
+    logger.info('User service initialized');
+
+    const orderService = createOrderService(repository, userService, cache, logger, metrics);
+    logger.info('Order service initialized');
+
+    const notificationService = createNotificationService(logger, metrics);
+    logger.info('Notification service initialized');
+
+    return {
+      config,
+      logger,
+      db,
+      cache,
+      metrics,
+      repository,
+      userService,
+      orderService,
+      notificationService,
+    };
   },
 });
 
-await container.initialize();
-const userService = container.get('userService');
-const orderService = container.get('orderService');
-const notificationService = container.get('notificationService');
-const metrics = container.get('metrics');
+console.log('✅ Application created with factory pattern');
+console.log('   - Fastify server: ready\n');
 
 // ============================================================================
-// 6. Routes
+// 5. Routes using Context
 // ============================================================================
+
+const { userService, orderService, notificationService, metrics } = app.context;
 
 const routes = [
   // Health check
@@ -342,16 +423,6 @@ const routes = [
     }),
   },
 
-  // Container introspection
-  {
-    method: 'GET',
-    path: '/introspect',
-    handler: async () => {
-      const info = container.introspect();
-      return wrapSuccess(info);
-    },
-  },
-
   // User routes
   {
     method: 'GET',
@@ -360,10 +431,29 @@ const routes = [
       const user = await userService.findById(request.params.id);
       if (!user) {
         throw new FrameworkError({
-          code: ErrorCodes.VALIDATION_ERROR,
+          code: 'VALIDATION_ERROR',
           message: 'User not found',
         });
       }
+      return wrapSuccess(user);
+    },
+  },
+
+  {
+    method: 'GET',
+    path: '/users',
+    handler: async () => {
+      const users = await userService.findAll();
+      return wrapSuccess(users);
+    },
+  },
+
+  {
+    method: 'POST',
+    path: '/users',
+    preHandler: [validateBody(UserModel.inputSchema)],
+    handler: async (request) => {
+      const user = await userService.create(request.body);
       return wrapSuccess(user);
     },
   },
@@ -395,23 +485,28 @@ const routes = [
   },
 ];
 
-app.registerRoutes(routes);
+// Register routes directly
+for (const route of routes) {
+  app.route(route);
+}
 
-console.log('📡 Routes registered:', routes.length);
+console.log(`📡 Routes registered: ${routes.length}`);
 
 // ============================================================================
-// 7. Start Server
+// 6. Start Server
 // ============================================================================
 
-await app.start();
+await app.ready();
+await app.listen({ port: config.port, host: config.host });
 
 console.log('\n✅ DI Example Server running!');
 console.log(`\n📡 API Endpoints:`);
-console.log(`   GET  http://127.0.0.1:3001/health`);
-console.log(`   GET  http://127.0.0.1:3001/introspect`);
-console.log(`   GET  http://127.0.0.1:3001/users/:id`);
-console.log(`   POST http://127.0.0.1:3001/orders`);
-console.log(`   GET  http://127.0.0.1:3001/metrics`);
-console.log(`   GET  http://127.0.0.1:3001/cache/stats`);
+console.log(`   GET  http://${config.host}:${config.port}/health`);
+console.log(`   GET  http://${config.host}:${config.port}/users/:id`);
+console.log(`   GET  http://${config.host}:${config.port}/users`);
+console.log(`   POST http://${config.host}:${config.port}/users`);
+console.log(`   POST http://${config.host}:${config.port}/orders`);
+console.log(`   GET  http://${config.host}:${config.port}/metrics`);
+console.log(`   GET  http://${config.host}:${config.port}/cache/stats`);
 
-export { app, container, userService, orderService };
+export { app, userService, orderService };

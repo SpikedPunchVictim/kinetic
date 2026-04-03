@@ -110,21 +110,23 @@ Health.register({
 // 4. In-Memory Store with Dual Tracing
 // ============================================================================
 
-class InstrumentedStore {
-  constructor(name) {
+class ProductStoreService {
+  constructor(name, otel, coreTracer) {
     this.name = name;
     this.data = new Map();
+    this.otel = otel;
+    this.coreTracer = coreTracer;
   }
 
   async create(record) {
     // Create OTel span for the operation
-    const otelSpan = otel.startSpan(`store.${this.name}.create`, {
+    const otelSpan = this.otel.startSpan(`store.${this.name}.create`, {
       'db.table': this.name,
       'db.operation': 'INSERT',
     });
 
     // Also use core tracer for comparison
-    const coreSpan = coreTracer.startSpan(`store.${this.name}.create`);
+    const coreSpan = this.coreTracer.startSpan(`store.${this.name}.create`);
 
     try {
       Metrics.counter('store.create').inc(1, { store: this.name });
@@ -139,12 +141,12 @@ class InstrumentedStore {
       otelSpan.setAttribute('db.rows_affected', 1);
       otelSpan.setAttribute('entity.id', id);
 
-      coreTracer.endSpan(coreSpan, 'ok');
+      this.coreTracer.endSpan(coreSpan, 'ok');
       otelSpan.end();
 
       return newRecord;
     } catch (err) {
-      coreTracer.endSpan(coreSpan, 'error');
+      this.coreTracer.endSpan(coreSpan, 'error');
       otelSpan.setAttribute('error', true);
       otelSpan.setAttribute('error.message', err.message);
       otelSpan.end();
@@ -159,7 +161,7 @@ class InstrumentedStore {
   }
 
   async findAll() {
-    const otelSpan = otel.startSpan(`store.${this.name}.findAll`, {
+    const otelSpan = this.otel.startSpan(`store.${this.name}.findAll`, {
       'db.table': this.name,
       'db.operation': 'SELECT',
     });
@@ -176,7 +178,7 @@ class InstrumentedStore {
   }
 
   async findById(id) {
-    const otelSpan = otel.startSpan(`store.${this.name}.findById`, {
+    const otelSpan = this.otel.startSpan(`store.${this.name}.findById`, {
       'db.table': this.name,
       'db.operation': 'SELECT',
       'db.query': `SELECT * FROM ${this.name} WHERE id = ?`,
@@ -239,7 +241,7 @@ await OtelAddon.registerHooks(app, otel, {
 
 console.log('✅ OTel middleware registered');
 
-const productStore = new InstrumentedStore('Product');
+const productStore = new ProductStoreService('Product', otel, coreTracer);
 
 // Seed data
 await productStore.create({ name: 'Laptop', price: 999, stock: 10, category: 'electronics' });
