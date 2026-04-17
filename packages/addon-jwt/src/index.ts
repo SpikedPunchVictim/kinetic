@@ -1,5 +1,5 @@
 /**
- * @klusterio/addon-jwt - JWT Authentication Addon
+ * @klusterio/kinetic-addon-jwt - JWT Authentication Addon
  */
 
 export { JwtAddon, type JwtConfig } from './addon.js';

@@ -31,7 +31,7 @@ import {
   getErrorsIntrospection,
   registerIntrospectionRoutes,
 } from '@klusterio/kinetic-core/ai-dev';
-import { OtelAddon } from '@klusterio/addon-otel';
+import { OtelAddon } from '@klusterio/kinetic-addon-otel';
 
 console.log('📊 Observability Demo Example (Enhanced with OpenTelemetry)\n');
 

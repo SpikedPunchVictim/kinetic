@@ -7,7 +7,7 @@
   },
   "dependencies": {
     "@klusterio/kinetic-core": "workspace:*",
-    "@klusterio/addon-otel": "workspace:*",
+    "@klusterio/kinetic-addon-otel": "workspace:*",
     "zod": "^3.22.0"
   }
 }

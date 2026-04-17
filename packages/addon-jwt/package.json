@@ -1,5 +1,5 @@
 {
-  "name": "@klusterio/addon-jwt",
+  "name": "@klusterio/kinetic-addon-jwt",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -25,5 +25,8 @@
     "@types/node": "^22.0.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

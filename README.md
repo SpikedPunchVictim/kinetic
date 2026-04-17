@@ -11,10 +11,10 @@ Designed to minimise the token cost of AI-assisted development: compact error fo
 | Package | Description |
 |---|---|
 | `@klusterio/kinetic-core` | Framework core — app bootstrap, models, CRUD, security, env, introspection |
-| `@klusterio/addon-jwt` | JWT sign / verify / middleware |
-| `@klusterio/addon-cors` | CORS via `@fastify/cors` |
-| `@klusterio/addon-kysely` | `ICrud` adapter for Kysely |
-| `@klusterio/addon-otel` | OpenTelemetry distributed tracing |
+| `@klusterio/kinetic-addon-jwt` | JWT sign / verify / middleware |
+| `@klusterio/kinetic-addon-cors` | CORS via `@fastify/cors` |
+| `@klusterio/kinetic-addon-kysely` | `ICrud` adapter for Kysely |
+| `@klusterio/kinetic-addon-otel` | OpenTelemetry distributed tracing |
 
 ---
 
@@ -219,10 +219,10 @@ All framework errors use a compact token-efficient format (~14 tokens vs ~45 for
 
 ## Addons
 
-### `@klusterio/addon-jwt`
+### `@klusterio/kinetic-addon-jwt`
 
 ```typescript
-import { JwtAddon } from '@klusterio/addon-jwt';
+import { JwtAddon } from '@klusterio/kinetic-addon-jwt';
 
 const jwt = await JwtAddon.create({ secret: process.env.JWT_SECRET });
 const token = jwt.sign({ sub: user.id });
@@ -232,10 +232,10 @@ const claims = jwt.verify(token);
 await app.register(JwtAddon.middleware({ secret: process.env.JWT_SECRET }));
 ```
 
-### `@klusterio/addon-cors`
+### `@klusterio/kinetic-addon-cors`
 
 ```typescript
-import { CorsAddon } from '@klusterio/addon-cors';
+import { CorsAddon } from '@klusterio/kinetic-addon-cors';
 
 await app.register(CorsAddon.plugin({
   origin: 'https://app.example.com',
@@ -244,12 +244,12 @@ await app.register(CorsAddon.plugin({
 }));
 ```
 
-### `@klusterio/addon-kysely`
+### `@klusterio/kinetic-addon-kysely`
 
 `KyselyStore<T>` implements `ICrud<T>` for PostgreSQL and SQLite (dialects that support `RETURNING`).
 
 ```typescript
-import { KyselyStore } from '@klusterio/addon-kysely';
+import { KyselyStore } from '@klusterio/kinetic-addon-kysely';
 import { Kysely, PostgresDialect } from 'kysely';
 
 const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
@@ -263,7 +263,7 @@ const userService = defineService({ store: new KyselyStore<User>(db, 'users') })
 | Package | Tests |
 |---|---|
 | `@klusterio/kinetic-core` | 145 |
-| `@klusterio/addon-jwt` | 8 |
-| `@klusterio/addon-cors` | 6 |
-| `@klusterio/addon-kysely` | 11 |
+| `@klusterio/kinetic-addon-jwt` | 8 |
+| `@klusterio/kinetic-addon-cors` | 6 |
+| `@klusterio/kinetic-addon-kysely` | 11 |
 | **Total** | **170** |

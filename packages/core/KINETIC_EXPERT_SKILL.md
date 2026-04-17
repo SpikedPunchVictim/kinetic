@@ -1,105 +1,148 @@
-# Kinetic Framework - AI Agent Expert Skill
+# Kinetic Framework — Agent Skill
 
-## Overview
-
-Kinetic is an AI-Optimized Fastify Application Framework designed for AI-generated code that prioritizes token efficiency, code minimization, and compile-time safety. Architecture decisions are documented in ADR-001 and ADR-002.
+Kinetic is an AI-optimised Fastify framework. Its primary goal is reducing the token cost of AI-assisted backend development through convention enforcement, compact errors, and a single introspection endpoint that surfaces the full app surface in one request.
 
 ---
 
-## Core Philosophy
+## Mental model
 
-### AI-First Design
-- **Primary user is AI, not humans** - All design decisions prioritize AI comprehension
-- **Schema-first ground truth** - All types, validation, and contracts derive from Zod schemas
-- **Token efficiency** - Minimize tokens required to express features
+```
+defineEnv()        → validate env vars per-module, register to /__introspect
+defineModel()      → declare Zod schema + naming conventions
+defineService()    → wrap ICrud store with lifecycle hooks
+defineMiddleware() → named Fastify preHandler
+createApp()        → bootstrap Fastify with typed app/request contexts
+```
 
-### Key Principles
-1. **Explicit over implicit** - Clear data flow and dependencies
-2. **Compile-time safety** - TypeScript validates at build time, not runtime
-3. **Factory pattern** - No container-based DI with magic dependency injection
-4. **Composition over inheritance** - Dependency injection through explicit functions
+Services never reach into `process.env` directly. Every module that needs env vars calls `defineEnv()` at the top of its file.
 
 ---
 
-## Architecture
-
-#### Correct Pattern: Explicit Context Factory
+## Package imports
 
 ```typescript
-// Define your context types
-interface AppContext {
-  db: DbService;
-  cache: CacheService;
-  jwt: JwtService;
-  otel: OtelService; // Optional addon
-}
+// Core — main entry
+import {
+  createApp,
+  defineEnv,
+  defineService,
+  defineMiddleware,
+  defineModel,
+  generateCrudRoutes,
+  MemoryStore,
+  FrameworkError,
+  ErrorCodes,
+  getEnvRegistry,
+  clearEnvRegistry,       // tests only
+} from '@klusterio/kinetic-core';
 
-interface RequestContext {
-  user: User;
-  span: Span;
-}
+// Sub-paths
+import { wrapSuccess, wrapList, enforcePagination } from '@klusterio/kinetic-core/schema';
+import { validateBody, rateLimit, createAuthHook, extractBearerToken } from '@klusterio/kinetic-core/security';
+import { createLogger, Metrics, Health } from '@klusterio/kinetic-core/observability';
+import { createIntrospectionPlugin } from '@klusterio/kinetic-core/ai-dev';
 
-// Create app with explicit context
-const app = await createApp<AppContext, RequestContext>({
-  createAppContext: async () => {
-    // Order is EXPLICIT - no magic
-    const db = await DbAddon.create(env.DATABASE_URL);
-    const cache = await CacheAddon.create({ db });
-    const jwt = await JwtAddon.create({ secret: env.JWT_SECRET });
-    const otel = await OtelAddon.create({ serviceName: 'my-app' });
+// Addons
+import { JwtAddon }  from '@klusterio/kinetic-addon-jwt';
+import { CorsAddon } from '@klusterio/kinetic-addon-cors';
+import { KyselyStore } from '@klusterio/kinetic-addon-kysely';
+import { OtelAddon } from '@klusterio/kinetic-addon-otel';
 
-    return { db, cache, jwt, otel };
-  },
-
-  createRequestContext: async (req, appCtx) => {
-    // Per-request context
-    const user = await verifyToken(req.headers.authorization, appCtx.jwt);
-    const span = appCtx.otel.startSpan(req.url);
-    return { user, span };
-  },
-});
-
-// Access context in handlers
-app.get('/users', async (req) => {
-  const user = await req.appContext.db.query('SELECT * FROM users');
-  req.requestContext.span.setAttribute('user.count', user.length);
-  return user;
-});
+// Types
+import type { ICrud, AppContext, RequestContext, FastifyRequestWithContexts } from '@klusterio/kinetic-core';
 ```
 
 ---
 
-## Core API Reference
+## 1. Environment variables — `defineEnv`
 
-### Application Bootstrap
+Call once per module at the **top level** (not inside functions). Validation runs at import time, so missing vars surface at startup.
+
+```typescript
+// db/config.ts
+import { defineEnv } from '@klusterio/kinetic-core';
+import { z } from 'zod';
+
+export const dbEnv = defineEnv('db', {
+  DATABASE_URL: z.string().url(),
+  DB_POOL_SIZE: z.coerce.number().default(10),   // "10" → 10
+  DB_SSL:       z.coerce.boolean().default(false), // "true" → true
+});
+// dbEnv.DATABASE_URL → string, dbEnv.DB_POOL_SIZE → number
+```
+
+**Rules:**
+- Use `z.coerce.number()` / `z.coerce.boolean()` for non-strings — env values are always strings.
+- Use `z.string().optional()` for vars that may be absent.
+- The `group` name (first arg) appears in error messages and `/__introspect/env`.
+- Groups accumulate across files; each module only declares what it needs.
+
+**In tests:** pass a custom source object; never mutate `process.env`.
+
+```typescript
+import { defineEnv, clearEnvRegistry } from '@klusterio/kinetic-core';
+beforeEach(() => clearEnvRegistry());
+
+const env = defineEnv('db', { DATABASE_URL: z.string().url() }, {
+  DATABASE_URL: 'postgres://localhost/test',
+});
+```
+
+**Error shape when validation fails:**
+```
+FrameworkError: {"c":"E_INIT_CFG","s":"db","r":"DATABASE_URL,API_KEY","t":1712345678}
+                                                  ^ all failing keys at once
+```
+
+---
+
+## 2. Application bootstrap — `createApp`
 
 ```typescript
 import { createApp } from '@klusterio/kinetic-core';
+import { dbEnv } from './db/config.js';
+import { KyselyStore } from '@klusterio/kinetic-addon-kysely';
 
-const app = await createApp<AppContext, RequestContext>({
-  createAppContext: async () => ({ /* services */ }),
-  createRequestContext: async (req, appCtx) => ({ /* per-request data */ }),
-  fastifyOptions: { logger: true }, // Optional Fastify options
+const app = await createApp({
+  createAppContext: async () => {
+    // Build services in dependency order — explicit, no magic
+    const db = new Kysely({ dialect: new PostgresDialect({ connectionString: dbEnv.DATABASE_URL }) });
+    const userService = defineService({ store: new KyselyStore(db, 'users') });
+    return { db, userService };
+  },
+
+  // Optional: per-request context (called on every request)
+  createRequestContext: async (req, appCtx) => {
+    const token = extractBearerToken(req.headers);
+    const user = token ? await appCtx.jwt.verify(token) : null;
+    return { user };
+  },
+
+  fastifyOptions: { logger: { level: 'info' } },
+  gracefulShutdown: true,  // default — registers SIGTERM/SIGINT handlers
+  requestLogging: true,    // default — logs request/response via Pino
 });
 
-// Start server
 await app.listen({ port: 3000, host: '0.0.0.0' });
 ```
 
-### Schema Definition
+**`x-request-id`:** Fastify picks up the incoming `x-request-id` header automatically and echoes it on every response. A UUID is generated when the header is absent.
+
+---
+
+## 3. Models — `defineModel`
 
 ```typescript
-import { defineModel } from '@klusterio/kinetic-core/schema';
+import { defineModel } from '@klusterio/kinetic-core';
 import { z } from 'zod';
 
 const UserModel = defineModel({
-  name: 'User',
+  name: 'User',             // MUST be PascalCase
   fields: {
-    id: z.string().uuid(),
-    email: z.string().email(),
-    name: z.string().min(1).max(100),
-    age: z.number().int().min(0).optional(),
-    role: z.enum(['user', 'admin']).default('user'),
+    id:        z.string().uuid(),
+    email:     z.string().email(),
+    name:      z.string().min(1).max(100),
+    role:      z.enum(['user', 'admin']).default('user'),
     createdAt: z.date().default(() => new Date()),
   },
   relations: {
@@ -107,33 +150,49 @@ const UserModel = defineModel({
   },
 });
 
-// Get derived types
-import type { Model } from '@klusterio/kinetic-core';
-type User = Model<typeof UserModel>;
+// Derived schemas
+UserModel.inputSchema   // fields minus auto-generated (id, createdAt, updatedAt)
+UserModel.outputSchema  // all fields
+UserModel.getFields()   // FieldInfo[] — for introspection
+UserModel.getRelations() // RelationInfo[]
 ```
 
-### CRUD Operations (ICrud Interface)
+**Enforced conventions:**
+- Model names → PascalCase (throws `FrameworkError` otherwise)
+- Field names → camelCase
+- URL paths → auto-generated kebab-case plural: `User` → `/users`
+
+---
+
+## 4. Services — `defineService`
+
+Wraps an `ICrud` store with optional lifecycle hooks. Replaces manual service factory boilerplate.
 
 ```typescript
-import { MemoryStore } from '@klusterio/kinetic-core';
-import { generateCrudRoutes } from '@klusterio/kinetic-core/schema';
+import { defineService, MemoryStore } from '@klusterio/kinetic-core';
 
-const userStore: ICrud<User> = new MemoryStore();
-
-const routes = generateCrudRoutes(UserModel, {
-  store: userStore, // REQUIRED - implements ICrud
-  middleware: {
-    create: [authMiddleware],
-    read: [],
-    update: [authMiddleware, adminOnly],
-    delete: [authMiddleware, adminOnly],
+const userService = defineService({
+  store: new MemoryStore<User>(),   // or KyselyStore, or custom ICrud
+  hooks: {
+    beforeCreate: async (data) => ({ ...data, createdAt: new Date() }),
+    afterCreate:  async (entity) => { await emailService.welcome(entity); return entity; },
+    beforeUpdate: async (id, data) => data,
+    afterUpdate:  async (entity) => entity,
+    beforeDelete: async (id) => { await audit.log('delete', id); },
   },
 });
 
-app.registerRoutes(routes);
+// ICrud interface returned:
+await userService.create({ email: 'a@b.com', name: 'Alice' });
+await userService.findById(id);
+await userService.findAll({ cursor, limit: 20 });
+await userService.update(id, { name: 'Alicia' });
+await userService.delete(id);
 ```
 
-#### ICrud Interface
+**`MemoryStore`** is for development and tests. For production use `KyselyStore` or implement `ICrud` yourself.
+
+### ICrud interface
 
 ```typescript
 interface ICrud<T, CreateInput = Omit<T, 'id'>, UpdateInput = Partial<T>> {
@@ -143,532 +202,410 @@ interface ICrud<T, CreateInput = Omit<T, 'id'>, UpdateInput = Partial<T>> {
   update(id: string, data: UpdateInput): Promise<T>;
   delete(id: string): Promise<void>;
 }
-
-// Custom implementation
-const dbStore: ICrud<User> = {
-  create: async (data) => {
-    const [user] = await db.insert(users).values(data).returning();
-    return user;
-  },
-  findById: async (id) => {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user || null;
-  },
-  // ...implement rest
-};
 ```
+
+### KyselyStore (PostgreSQL / SQLite)
+
+```typescript
+import { KyselyStore } from '@klusterio/kinetic-addon-kysely';
+import { Kysely, PostgresDialect } from 'kysely';
+
+const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
+const userService = defineService({ store: new KyselyStore<User>(db, 'users') });
+```
+
+Requires a dialect that supports `RETURNING` (PostgreSQL, SQLite). MySQL users must subclass and override `create`/`update`.
 
 ---
 
-## Error Handling
+## 5. Middleware — `defineMiddleware`
 
-### Token-Efficient Error Format
-
-Kinetic uses condensed error codes to minimize token usage:
+Gives each middleware a name so it appears in stack traces and introspection.
 
 ```typescript
-import { FrameworkError } from '@klusterio/kinetic-core';
+import { defineMiddleware } from '@klusterio/kinetic-core';
 
-// Correct: Token-efficient
-throw new FrameworkError({
-  c: 'E_VALID',    // code: compact
-  s: 'User',        // service/resource
-  r: 'email_fmt',   // reason: abbreviated
-  t: Date.now(),    // timestamp for tracing
-});
-
-// JSON output: {"c":"E_VALID","s":"User","r":"email_fmt","t":1711234567890}
-// ~55 chars = ~14 tokens (vs ~45 tokens for verbose format)
-```
-
-### Error Code Reference
-
-| Code | Meaning | HTTP Status |
-|------|---------|-------------|
-| `E_VALID` | Validation failed | 400 |
-| `E_AUTH` | Authentication required | 401 |
-| `E_FORBID` | Forbidden (insufficient permissions) | 403 |
-| `E_NOTFOUND` | Resource not found | 404 |
-| `E_DUP` | Duplicate/resource exists | 409 |
-| `E_SERVER` | Internal server error | 500 |
-| `E_INIT` | Initialization failed | 500 |
-
----
-
-## Schema Module
-
-### Model Operations
-
-```typescript
-import { defineModel, generateUrlPath, wrapSuccess, wrapList } from '@klusterio/kinetic-core/schema';
-
-// URL path generation (pluralization)
-const path = generateUrlPath('User'); // '/users'
-
-// Response wrappers
-wrapSuccess({ id: '123', name: 'John' });
-// { success: true, data: { id: '123', name: 'John' } }
-
-wrapList([user1, user2], { total: 100, page: 1, limit: 20 });
-// { success: true, data: [...], meta: { total: 100, page: 1, limit: 20 } }
-
-// Pagination enforcement
-import { enforcePagination } from '@klusterio/kinetic-core/schema';
-
-const pagination = enforcePagination({ page: 1, limit: 100 }, { maxLimit: 50 });
-// Returns: { page: 1, limit: 50 } (enforced max)
-```
-
----
-
-## Security Module
-
-### Validation Middleware
-
-```typescript
-import { validateBody, validateParams } from '@klusterio/kinetic-core/security';
-
-app.post('/users', {
-  preHandler: [validateBody(UserModel.inputSchema)],
-  handler: async (req) => {
-    // req.body is validated
-    return await createUser(req.body);
-  },
-});
-```
-
-### Rate Limiting
-
-```typescript
-import { rateLimit } from '@klusterio/kinetic-core/security';
-
-app.post('/login', {
-  preHandler: [rateLimit({ max: 5, window: 300 })], // 5 requests per 5 minutes
-  handler: async (req) => { /* ... */ },
-});
-```
-
-### Auth Hooks
-
-```typescript
-import { createAuthHook, extractBearerToken } from '@klusterio/kinetic-core/security';
-
-const authHook = createAuthHook(async (request) => {
-  const token = extractBearerToken(request.headers);
-  if (!token) return { success: false, error: 'No token' };
-
-  try {
-    const user = await verifyToken(token);
-    return { success: true, user };
-  } catch {
-    return { success: false, error: 'Invalid token' };
+const requireAuth = defineMiddleware('requireAuth', async (req, reply) => {
+  const token = extractBearerToken(req.headers);
+  if (!token) {
+    reply.code(401).send({ error: 'Unauthorized' });
   }
 });
 
-// Use in route
-app.get('/protected', async (req) => {
-  const result = await authHook(req);
-  if (!result.success) {
-    throw new FrameworkError({ c: 'E_AUTH', s: 'protected', r: result.error });
+const adminOnly = defineMiddleware('adminOnly', async (req, reply) => {
+  const r = req as FastifyRequestWithContexts<AppCtx, ReqCtx>;
+  if (r.requestContext.user?.role !== 'admin') {
+    reply.code(403).send({ error: 'Forbidden' });
   }
-  return { user: result.user };
 });
+
+// Use in routes
+app.delete('/users/:id', { preHandler: [requireAuth.fn, adminOnly.fn] }, handler);
 ```
 
 ---
 
-## Observability Module
+## 6. Routes
 
-### Core Observability (Built-in)
+Register routes directly on the Fastify instance. `generateCrudRoutes` covers the standard five CRUD operations.
 
-```typescript
-import { createLogger, Metrics, Health, tracer } from '@klusterio/kinetic-core/observability';
-
-// Logger
-const logger = createLogger({ level: 'info', format: 'json' });
-logger.info('User created', { userId: '123' });
-
-// Metrics
-Metrics.counter('http.requests').inc(1, { route: '/users' });
-Metrics.histogram('request.duration').observe(0.150, { route: '/users' });
-
-// Health checks
-Health.register({
-  name: 'database',
-  check: async () => {
-    const connected = await checkDbConnection();
-    return { status: connected ? 'up' : 'down', details: { latency: '2ms' } };
-  },
-});
-
-// Tracing (in-memory, development)
-const span = tracer.startSpan('database-query', { table: 'users' });
-tracer.endSpan(span, 'ok');
-```
-
-### OpenTelemetry Add-on (Production)
+### Manual routes (recommended for custom logic)
 
 ```typescript
-import { OtelAddon } from '@klusterio/addon-otel';
+import { wrapSuccess, enforcePagination } from '@klusterio/kinetic-core/schema';
 
-const otel = await OtelAddon.create({
-  serviceName: 'my-service',
-  serviceVersion: '1.0.0',
-  environment: 'production',
-  tracesEndpoint: 'http://localhost:4318/v1/traces',
-  metricsEndpoint: 'http://localhost:4318/v1/metrics',
-  samplingRatio: 0.1, // 10% sampling in production
+const { userService } = app.context;
+
+app.post('/users', async (req) => {
+  const user = await userService.create(req.body);
+  return wrapSuccess(user);                        // → { data: user }
 });
 
-// In app context
-const app = await createApp<{ otel: typeof otel }>({
-  createAppContext: async () => ({ otel }),
-});
-
-// Register automatic HTTP tracing
-await OtelAddon.registerHooks(app, otel, {
-  skipPaths: ['/health', '/metrics'],
-});
-
-// Manual spans
-const span = otel.startSpan('custom-operation', { 'custom.attr': 'value' });
-span.setAttribute('result', 'success');
-span.end();
-
-// Metrics
-const counter = otel.createCounter('requests_total');
-counter?.add(1, { method: 'GET', route: '/users' });
-
-// Graceful shutdown
-await otel.shutdown();
-```
-
----
-
-## Add-ons
-
-### Pattern: Factory Functions
-
-Add-ons follow the factory pattern, exporting factory functions not classes:
-
-```typescript
-// Correct addon pattern
-export const MyAddon = {
-  async create(config: MyConfig): Promise<MyService> {
-    return new MyServiceImpl(config);
-  },
-
-  registerHooks(fastify: FastifyInstance, service: MyService): void {
-    fastify.addHook('onReady', async () => {
-      await service.initialize();
-    });
-  },
-
-  async withSpan<T>(service: MyService, name: string, fn: () => Promise<T>): Promise<T> {
-    const span = service.startSpan(name);
-    try {
-      return await fn();
-    } finally {
-      span.end();
-    }
-  }
-};
-
-// Usage
-const service = await MyAddon.create(config);
-MyAddon.registerHooks(app, service);
-```
-
-### Available Add-ons
-
-- `@klusterio/addon-otel` - OpenTelemetry tracing and metrics
-- `@klusterio/addon-jwt` - JWT authentication
-
----
-
-## Type Safety
-
-### Accessing Context in Handlers
-
-```typescript
-import type { FastifyRequest } from 'fastify';
-import type { FastifyRequestWithContexts } from '@klusterio/kinetic-core';
-
-interface AppContext {
-  db: Database;
-  jwt: JwtService;
-}
-
-interface RequestContext {
-  user: User;
-}
-
-app.get('/users', async (req: FastifyRequestWithContexts<AppContext, RequestContext>) => {
-  const users = await req.appContext.db.query('SELECT * FROM users');
-  const currentUser = req.requestContext.user;
-  return { users, currentUser };
-});
-```
-
----
-
-## Testing
-
-### Test-First Development
-
-```typescript
-import { describe, it, expect } from 'vitest';
-import { createApp } from '@klusterio/kinetic-core';
-
-describe('User API', () => {
-  it('creates users', async () => {
-    const app = await createApp({
-      createAppContext: async () => ({ db: mockDb }),
-    });
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/users',
-      payload: { email: 'test@example.com', name: 'Test' },
-    });
-
-    expect(response.statusCode).toBe(201);
-    expect(JSON.parse(response.body).data.email).toBe('test@example.com');
+app.get('/users', async (req) => {
+  const users = await userService.findAll();
+  const { cursor, limit } = req.query as { cursor?: string; limit?: string };
+  return enforcePagination(users, {               // → { data: [...], pagination: {...} }
+    cursor,
+    limit: limit ? parseInt(limit) : 20,
   });
 });
-```
 
----
-
-## Common Patterns
-
-### Route Definition Pattern
-
-```typescript
-const routes = [
-  {
-    method: 'GET',
-    path: '/users',
-    handler: async (request, reply) => {
-      const users = await userService.findAll();
-      return wrapSuccess(users);
-    },
-  },
-  {
-    method: 'POST',
-    path: '/users',
-    preHandler: [validateBody(UserModel.inputSchema)],
-    handler: async (request) => {
-      const user = await userService.create(request.body);
-      return wrapSuccess(user);
-    },
-  },
-];
-
-// Register routes
-for (const route of routes) {
-  app.route(route);
-}
-```
-
-### Service Pattern
-
-```typescript
-// Factory function
-function createUserService(db: Database, logger: Logger) {
-  return {
-    async create(data: CreateUserInput) {
-      logger.info('Creating user', { email: data.email });
-      return db.insert('users', data);
-    },
-    async findById(id: string) {
-      return db.findOne('users', { id });
-    },
-    // ...
-  };
-}
-
-// Use in context
-const app = await createApp<{
-  userService: ReturnType<typeof createUserService>;
-}>({
-  createAppContext: async () => {
-    const db = await DbAddon.create(env.DATABASE_URL);
-    const logger = createLogger();
-    const userService = createUserService(db, logger);
-    return { userService };
-  },
-});
-```
-
-### Error Handling Pattern
-
-```typescript
 app.get('/users/:id', async (req) => {
-  try {
-    const user = await userService.findById(req.params.id);
-    if (!user) {
-      throw new FrameworkError({
-        c: 'E_NOTFOUND',
-        s: 'User',
-        r: 'id_invalid',
-        t: Date.now(),
-      });
-    }
-    return wrapSuccess(user);
-  } catch (err) {
-    if (err instanceof FrameworkError) throw err;
-
-    // Wrapped unexpected errors
-    throw new FrameworkError({
-      c: 'E_SERVER',
-      s: 'User',
-      r: err instanceof Error ? err.message.slice(0, 30) : 'unknown',
-      t: Date.now(),
-    });
+  const user = await userService.findById(req.params.id);
+  if (!user) {
+    throw FrameworkError.create(ErrorCodes.E_NF, 'userService', 'not_found');
   }
+  return wrapSuccess(user);
 });
+```
+
+### Auto-generated CRUD routes
+
+```typescript
+import { generateCrudRoutes } from '@klusterio/kinetic-core';
+
+const routes = generateCrudRoutes(UserModel, { store: userStore });
+// Registers: POST /users, GET /users, GET /users/:id, PUT /users/:id, DELETE /users/:id
+
+routes.forEach(({ method, path, handler, preHandler }) => {
+  app[method.toLowerCase()](path, { preHandler: preHandler ?? [] }, handler);
+});
+```
+
+### Response shapes
+
+```typescript
+wrapSuccess(data)           // → { data: T }
+wrapList(data, pagination)  // → { data: T[], pagination: { nextCursor?, hasMore, totalCount? } }
+enforcePagination(array, options) // slices array + returns ListResponse<T>
 ```
 
 ---
 
-## Anti-Patterns (NEVER DO)
+## 7. Error handling
 
-### ❌ Implicit Dependencies
-
-```typescript
-// DON'T - Dependencies must be explicit
-async function createUserService() {
-  const db = getGlobalDb(); // ❌ Hidden dependency
-  return { /* ... */ };
-}
-
-// DO - Explicit injection
-function createUserService(db: Database) {
-  return { /* ... */ };
-}
-```
-
-### ❌ Runtime Type Checking
+Always use `FrameworkError`. The compact format saves ~30 tokens per error vs verbose alternatives.
 
 ```typescript
-// DON'T - Runtime regex doesn't work with bundlers
-function extractDependencies(fn: Function) {
-  const str = fn.toString();
-  const match = str.match(/\{([^}]+)\}/); // ❌ Breaks with minification
-  return match ? match[1].split(',') : [];
-}
+import { FrameworkError, ErrorCodes } from '@klusterio/kinetic-core';
 
-// DO - Compile-time type checking via TypeScript
-interface AppContext {
-  db: Database; // ✅ TypeScript validates
-}
-```
+// Static factory — most concise
+throw FrameworkError.create(ErrorCodes.E_NF, 'userService', 'not_found');
 
-### ❌ Verbose Error Messages
-
-```typescript
-// DON'T - Wastes tokens (45 tokens)
+// Constructor form — when you need all fields
 throw new FrameworkError({
-  code: 'VALIDATION_ERROR',
-  message: 'Failed to validate user input',
-  suggestion: 'Check email format',
-  docsUrl: '', // Empty string wastes tokens
-});
-
-// DO - Condensed format (14 tokens)
-throw new FrameworkError({
-  c: 'E_VALID',
-  s: 'User',
-  r: 'email_fmt',
+  code: ErrorCodes.E_VAL,
+  c: 'E_VAL',
+  s: 'userService',
+  r: 'email_invalid',
   t: Date.now(),
 });
 ```
 
+### Error codes
+
+| Code | When to use |
+|---|---|
+| `E_INIT` | App/service failed to start |
+| `E_INIT_CONN` | Connection failed at startup |
+| `E_INIT_CFG` | Env/config validation failed |
+| `E_NF` | Resource not found |
+| `E_NF_USER` | User not found specifically |
+| `E_NF_RESOURCE` | Generic resource not found |
+| `E_VAL` | Input validation failed |
+| `E_VAL_EMAIL` | Email validation failed |
+| `E_VAL_SCHEMA` | Schema validation failed |
+| `E_DB` | Database error |
+| `E_DB_TIMEOUT` | Database timeout |
+| `E_DB_CONN` | Database connection error |
+| `E_AUTH` | Authentication required / failed |
+| `E_AUTH_JWT` | JWT verification failed |
+| `E_AUTH_PERM` | Insufficient permissions |
+
+Wire format: `{"c":"E_NF","s":"userService","r":"not_found","t":1712345678901}`
+
 ---
 
-## Project Structure
+## 8. Security
+
+```typescript
+import { validateBody, rateLimit, createAuthHook, extractBearerToken } from '@klusterio/kinetic-core/security';
+
+// Body validation — throws E_VAL on failure
+app.post('/users', {
+  preHandler: [validateBody(UserModel.inputSchema)],
+}, async (req) => {
+  return wrapSuccess(await userService.create(req.body));
+});
+
+// Rate limiting
+app.post('/login', {
+  preHandler: [rateLimit({ max: 5, window: 60 })],  // 5 req / 60 sec
+}, handler);
+
+// Auth hook
+const authHook = createAuthHook(async (req) => {
+  const token = extractBearerToken(req.headers);
+  if (!token) return { success: false, error: 'No token' };
+  try {
+    const claims = await jwtService.verify(token);
+    return { success: true, user: { id: claims.sub, ...claims } };
+  } catch {
+    return { success: false, error: 'Invalid token' };
+  }
+});
+```
+
+---
+
+## 9. Addons
+
+### JWT — `@klusterio/kinetic-addon-jwt`
+
+```typescript
+import { JwtAddon } from '@klusterio/kinetic-addon-jwt';
+
+const jwt = await JwtAddon.create({
+  secret: jwtEnv.JWT_SECRET,
+  expiresIn: '1h',
+});
+
+const token = jwt.sign({ sub: user.id, role: user.role });
+const claims = jwt.verify(token);   // throws on invalid/expired
+
+// Fastify middleware — sets req.user from Bearer token
+await app.register(JwtAddon.middleware({ secret: jwtEnv.JWT_SECRET }));
+```
+
+### CORS — `@klusterio/kinetic-addon-cors`
+
+```typescript
+import { CorsAddon } from '@klusterio/kinetic-addon-cors';
+
+await app.register(CorsAddon.plugin({
+  origin: 'https://app.example.com',  // '*' for public APIs
+  credentials: true,
+  exposedHeaders: ['x-request-id'],
+}));
+```
+
+Register before routes. Uses `fastify-plugin` so it applies at app scope, not plugin scope.
+
+### Kysely — `@klusterio/kinetic-addon-kysely`
+
+```typescript
+import { KyselyStore } from '@klusterio/kinetic-addon-kysely';
+
+const userService = defineService({
+  store: new KyselyStore<User>(db, 'users'),
+});
+```
+
+### OpenTelemetry — `@klusterio/kinetic-addon-otel`
+
+```typescript
+import { OtelAddon } from '@klusterio/kinetic-addon-otel';
+
+const otel = await OtelAddon.create({
+  serviceName: 'my-service',
+  tracesEndpoint: 'http://otel-collector:4318/v1/traces',
+});
+
+const app = await createApp({
+  createAppContext: async () => ({ otel }),
+});
+```
+
+---
+
+## 10. Introspection
+
+All `defineEnv` groups, registered routes, models, and error codes appear in one endpoint. Read this first when working on an existing codebase.
 
 ```
-project/
-├── src/
-│   ├── app.ts              # Application bootstrap
-│   ├── services/           # Business logic
-│   ├── routes.ts           # Route definitions
-│   └── types.ts            # Shared types
-├── tests/
-│   └── *.test.ts
-└── package.json
+GET /__introspect          → full compact manifest (one request, full picture)
+GET /__introspect/env      → env groups { required: [], optional: [] }
+GET /__introspect/routes   → registered routes
+GET /__introspect/schema   → model definitions
+GET /__introspect/errors   → recent runtime errors
+GET /__introspect/health   → plugin status
 ```
 
-### Dependencies
-
+**Manifest shape:**
 ```json
 {
-  "dependencies": {
-    "@klusterio/kinetic-core": "workspace:*",
-    "@klusterio/addon-otel": "workspace:*",  // Optional
-    "@klusterio/addon-jwt": "workspace:*",   // Optional
-    "zod": "^3.22.0",
-    "fastify": "^5.0.0"
+  "routes":      ["GET /users", "POST /users", "GET /users/:id"],
+  "models":      { "User": { "fields": ["id:str","email:str","name:str"], "rel": [] } },
+  "errors":      ["E_INIT","E_NF","E_VAL","E_AUTH","E_DB"],
+  "conventions": { "url": "kebab", "fields": "camel", "pagination": "cursor" },
+  "env": {
+    "db":    { "required": ["DATABASE_URL"], "optional": ["DB_POOL_SIZE","DB_SSL"] },
+    "jwt":   { "required": ["JWT_SECRET"],   "optional": ["JWT_EXPIRES_IN"] }
   }
 }
 ```
 
----
+Field type abbreviations: `str`, `num`, `bool`, `date`, `arr`, `obj`. Trailing `?` = optional.
 
-## Quick Reference
-
-### Imports Cheat Sheet
-
+Enable the plugin:
 ```typescript
-// Core
-import { createApp, FrameworkError } from '@klusterio/kinetic-core';
+import { createIntrospectionPlugin } from '@klusterio/kinetic-core/ai-dev';
 
-// Schema
-import { defineModel, generateUrlPath, wrapSuccess } from '@klusterio/kinetic-core/schema';
-
-// Security
-import { validateBody, rateLimit, extractBearerToken } from '@klusterio/kinetic-core/security';
-
-// Observability
-import { createLogger, Metrics, Health } from '@klusterio/kinetic-core/observability';
-
-// AI Dev
-import { registerIntrospectionRoutes } from '@klusterio/kinetic-core/ai-dev';
-
-// Addons
-import { OtelAddon } from '@klusterio/addon-otel';
-import { JwtAddon } from '@klusterio/addon-jwt';
-
-// Types
-import type {
-  CreateAppOptions,
-  FastifyWithContext,
-  ICrud
-} from '@klusterio/kinetic-core';
+const plugin = createIntrospectionPlugin({ routes, models });
+await plugin.register(app);   // only registers in NODE_ENV !== 'production' by default
 ```
 
 ---
 
-## Resources
+## 11. Testing
 
-- **ADR-001**: AI-Optimized Fastify Application Framework
-- **ADR-002**: Framework Course Correction (Factory Pattern)
-- **API Reference**: `/API_REFERENCE.md`
-- **Examples**: `/examples/`
+```typescript
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createApp, defineService, MemoryStore, clearEnvRegistry } from '@klusterio/kinetic-core';
+
+beforeEach(() => clearEnvRegistry()); // reset env registry between tests
+
+describe('User API', () => {
+  it('creates a user', async () => {
+    const userService = defineService({ store: new MemoryStore() });
+    const app = await createApp({
+      createAppContext: async () => ({ userService }),
+    });
+
+    app.post('/users', async (req) => {
+      const user = await userService.create(req.body);
+      return wrapSuccess(user);
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/users',
+      payload: { name: 'Alice', email: 'alice@example.com' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).data.name).toBe('Alice');
+  });
+});
+```
+
+**Key points:**
+- Use `app.inject()` for request testing — no server needed
+- Use `MemoryStore` in tests, swap to `KyselyStore` (or a real DB) in integration tests
+- Call `clearEnvRegistry()` in `beforeEach` if tests call `defineEnv()`
+- Set `NODE_ENV=test` so graceful shutdown handlers are not registered
 
 ---
 
-## Decision Framework
+## 12. Recommended project structure
 
-When working with Kinetic, prefer:
+```
+src/
+├── env.ts               # optional: re-export all defineEnv calls for a central view
+├── app.ts               # createApp — wires context
+├── db/
+│   ├── config.ts        # defineEnv('db', {...})
+│   └── store.ts         # KyselyStore / ICrud implementation
+├── cache/
+│   ├── config.ts        # defineEnv('cache', {...})
+├── features/
+│   ├── users/
+│   │   ├── model.ts     # defineModel
+│   │   ├── service.ts   # defineService
+│   │   └── routes.ts    # app.get/post/etc
+│   └── posts/
+│       └── ...
+└── middleware/
+    └── auth.ts          # defineMiddleware
+```
 
-1. **Factory functions** over classes
-2. **Explicit dependencies** over dependency injection containers
-3. **Zod schemas** over runtime validation
-4. **Type-safe context** over global state
-5. **Condensed errors** over verbose messages
-6. **Composition** over inheritance
-7. **Test-first** development
+---
 
+## 13. Anti-patterns
+
+### ❌ Reading `process.env` directly in services
+
+```typescript
+// WRONG — hidden dependency, not registered to manifest
+const db = new Pool({ host: process.env.DB_HOST });
+
+// CORRECT
+const dbEnv = defineEnv('db', { DB_HOST: z.string() });
+const db = new Pool({ host: dbEnv.DB_HOST });
+```
+
+### ❌ Verbose error format
+
+```typescript
+// WRONG — ~45 tokens
+throw new FrameworkError({ code: 'E_NF', message: 'User was not found in the database', suggestion: '...', docsUrl: '' });
+
+// CORRECT — ~14 tokens
+throw FrameworkError.create(ErrorCodes.E_NF, 'userService', 'not_found');
+```
+
+### ❌ Using non-existent error codes
+
+```typescript
+// WRONG — E_NOTFOUND, E_VALID, E_SERVER do not exist
+throw new FrameworkError({ c: 'E_NOTFOUND', ... });
+
+// CORRECT — use ErrorCodes enum
+throw FrameworkError.create(ErrorCodes.E_NF, 'userService', 'not_found');
+```
+
+### ❌ `app.registerRoutes()` — does not exist
+
+```typescript
+// WRONG — this method does not exist
+app.registerRoutes(routes);
+
+// CORRECT — register on the Fastify instance directly
+routes.forEach(r => app[r.method.toLowerCase()](r.path, r.handler));
+```
+
+### ❌ Wrong `wrapSuccess` shape
+
+```typescript
+// WRONG — wrapSuccess does NOT return { success: true, data: ... }
+return { success: true, data: user };
+
+// CORRECT
+return wrapSuccess(user);  // → { data: user }
+```
+
+### ❌ `z.number()` for env vars
+
+```typescript
+// WRONG — env values are strings, z.number() will reject "3000"
+PORT: z.number().default(3000)
+
+// CORRECT
+PORT: z.coerce.number().default(3000)
+```
+
+---
+
+## 14. Zod version note
+
+Kinetic uses **Zod v4**. Use `instanceof` checks (not `constructor.name`) when working with Zod types in framework internals. The public API (`z.string()`, `z.object()`, `z.infer`, etc.) is unchanged from v3.
