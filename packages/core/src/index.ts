@@ -21,6 +21,10 @@ export type { ServiceHooks } from './service.js';
 export { defineMiddleware } from './middleware.js';
 export type { NamedMiddleware } from './middleware.js';
 
+// Env helpers
+export { defineEnv, getEnvRegistry, clearEnvRegistry } from './env.js';
+export type { EnvResult, EnvGroup } from './env.js';
+
 // Tracer exports
 export { InMemoryTracer, registerTraceEndpoint } from './tracer.js';
 

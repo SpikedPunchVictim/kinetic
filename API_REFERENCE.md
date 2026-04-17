@@ -376,26 +376,153 @@ const services = await testContainer.initialize();
 
 ## Core Package Exports
 
-`@klusterio/core` includes the following submodules for organizational purposes:
-
 ```typescript
 // Main exports
-import { createApp, createContainer } from '@klusterio/core';
+import {
+  createApp,
+  defineEnv,
+  defineService,
+  defineMiddleware,
+  defineModel,
+  generateCrudRoutes,
+  MemoryStore,
+  FrameworkError,
+  ErrorCodes,
+} from '@klusterio/kinetic-core';
 
-// Schema (naming conventions, validation)
-import { defineModel, generateCrudRoutes } from '@klusterio/core/schema';
+// Schema helpers (pagination, response wrapping, conventions)
+import { wrapSuccess, enforcePagination, wrapList } from '@klusterio/kinetic-core/schema';
 
-// Config (typed configuration)
-import { loadConfig } from '@klusterio/core/config';
+// Security helpers
+import { rateLimit, validateBody, createAuthHook, extractBearerToken } from '@klusterio/kinetic-core/security';
 
-// Security (hooks, rate limiting)
-import { rateLimit, validateBody } from '@klusterio/core/security';
+// Observability
+import { createLogger, Metrics, Health } from '@klusterio/kinetic-core/observability';
 
-// Observability (logging, tracing)
-import { logger, initTracing } from '@klusterio/core/observability';
+// AI introspection
+import { createIntrospectionPlugin } from '@klusterio/kinetic-core/ai-dev';
 ```
 
-**Note**: Schema, config, and conventions are **core features**, not separate packages. They cannot be used independently.
+---
+
+## Environment Variables — `defineEnv`
+
+### `defineEnv(group, schema, source?)`
+
+Validates a group of environment variables at module load time and registers them to the global introspection manifest.
+
+**Signature**:
+```typescript
+function defineEnv<T extends Record<string, z.ZodType>>(
+  group: string,
+  schema: T,
+  source?: Record<string, string | undefined>,  // defaults to process.env
+): { [K in keyof T]: z.infer<T[K]> }
+```
+
+**Parameters**:
+
+| Parameter | Type | Description |
+|---|---|---|
+| `group` | `string` | Short identifier shown in errors and `/__introspect/env` (e.g. `'db'`, `'cache'`) |
+| `schema` | `Record<string, ZodType>` | Flat object mapping env var names to Zod validators |
+| `source` | `Record<string, string \| undefined>` | Env source — defaults to `process.env`. Override in tests |
+
+**Returns**: A typed object containing the validated values.
+
+**Throws**: `FrameworkError` with code `E_INIT_CFG` if any required var is missing or invalid. The `reason` field lists all failing key names at once so you don't have to fix errors one by one.
+
+**Example — per-module pattern**:
+```typescript
+// db/config.ts
+import { defineEnv } from '@klusterio/kinetic-core';
+import { z } from 'zod';
+
+export const dbEnv = defineEnv('db', {
+  DATABASE_URL: z.string().url(),
+  DB_POOL_SIZE: z.coerce.number().default(10),
+  DB_SSL:       z.coerce.boolean().default(false),
+});
+// dbEnv.DATABASE_URL → string
+// dbEnv.DB_POOL_SIZE → number (10 if not set)
+// dbEnv.DB_SSL       → boolean
+
+// cache/config.ts
+export const cacheEnv = defineEnv('cache', {
+  REDIS_URL: z.string().url(),
+  REDIS_TTL: z.coerce.number().default(3600),
+});
+```
+
+Each module imports only the config it needs. No central config file required.
+
+**Coercion**: `process.env` values are always strings. Use `z.coerce` for non-string types:
+
+```typescript
+defineEnv('app', {
+  PORT:         z.coerce.number().default(3000),   // "3000" → 3000
+  DEBUG:        z.coerce.boolean().default(false),  // "true" → true
+  TIMEOUT_MS:   z.coerce.number().min(100),
+  LOG_LEVEL:    z.enum(['trace','debug','info','warn','error']).default('info'),
+  DATABASE_URL: z.string().url(),                   // validated as URL
+  API_KEY:      z.string().min(32),                 // required, min length
+  SENTRY_DSN:   z.string().optional(),              // optional — won't fail if absent
+});
+```
+
+**Testing**: pass a custom `source` object instead of mutating `process.env`:
+
+```typescript
+import { defineEnv, clearEnvRegistry } from '@klusterio/kinetic-core';
+
+beforeEach(() => clearEnvRegistry());
+
+it('connects with custom db url', () => {
+  const env = defineEnv('db', { DATABASE_URL: z.string().url() }, {
+    DATABASE_URL: 'postgres://localhost/test',
+  });
+  expect(env.DATABASE_URL).toBe('postgres://localhost/test');
+});
+```
+
+**Error shape**: when validation fails, the error encodes all failing keys in the `reason` field:
+
+```
+FrameworkError: {"c":"E_INIT_CFG","s":"db","r":"DATABASE_URL,API_KEY","t":1712345678}
+```
+
+### `getEnvRegistry()`
+
+Returns all env groups registered so far. Called internally by `/__introspect`.
+
+```typescript
+import { getEnvRegistry } from '@klusterio/kinetic-core';
+
+const registry = getEnvRegistry();
+// {
+//   db:    { required: ['DATABASE_URL'], optional: ['DB_POOL_SIZE', 'DB_SSL'] },
+//   cache: { required: ['REDIS_URL'],    optional: ['REDIS_TTL'] },
+// }
+```
+
+### `clearEnvRegistry()`
+
+Resets the global registry. For use in tests only.
+
+### Manifest integration
+
+Any group registered via `defineEnv()` automatically appears in `GET /__introspect`:
+
+```json
+{
+  "env": {
+    "db":    { "required": ["DATABASE_URL"], "optional": ["DB_POOL_SIZE", "DB_SSL"] },
+    "cache": { "required": ["REDIS_URL"],    "optional": ["REDIS_TTL"] }
+  }
+}
+```
+
+A dedicated `GET /__introspect/env` endpoint returns only the env registry.
 
 ---
 
@@ -740,103 +867,70 @@ app.register(healthPlugin, {
 
 ---
 
-## AI Developer Package: `@klusterio/ai-dev`
+## AI Developer Package — Introspection
 
-### Introspection Endpoints
+Register with `createIntrospectionPlugin` from `@klusterio/kinetic-core/ai-dev`. Only active in development by default.
 
-Automatically registered when `env.NODE_ENV === 'development'`.
+```typescript
+import { createIntrospectionPlugin } from '@klusterio/kinetic-core/ai-dev';
 
-#### `GET /__introspect/container`
+const plugin = createIntrospectionPlugin({ routes, models });
+await plugin.register(app);
+```
 
-Returns service container state including dependencies.
+### `GET /__introspect` — Compact manifest
+
+Single request to understand the full app. Designed for AI tooling.
 
 **Response**:
 ```json
 {
-  "services": [
-    {
-      "name": "db",
-      "scope": "singleton",
-      "status": "initialized",
-      "dependencies": [],
-      "dependents": ["userStore", "orderService"]
-    },
-    {
-      "name": "userStore",
-      "scope": "singleton",
-      "status": "initialized",
-      "dependencies": ["db"],
-      "dependents": ["orderService"]
-    }
-  ],
-  "resolvedOrder": ["db", "userStore", "orderService"],
-  "validation": { "success": true }
+  "routes":      ["GET /users", "POST /users", "GET /users/:id"],
+  "models":      { "User": { "fields": ["id:str", "email:str"], "rel": ["posts:hasMany"] } },
+  "errors":      ["E_INIT", "E_NF", "E_VAL", "E_AUTH", "E_DB"],
+  "conventions": { "url": "kebab", "fields": "camel", "pagination": "cursor" },
+  "env": {
+    "db":    { "required": ["DATABASE_URL"], "optional": ["DB_POOL_SIZE"] },
+    "cache": { "required": ["REDIS_URL"],    "optional": ["REDIS_TTL"] }
+  }
 }
 ```
 
-#### `GET /__introspect/routes`
+Field abbreviations in `models.fields`: `str`, `num`, `bool`, `date`, `arr`, `obj`. A trailing `?` means optional.
 
-Returns all registered routes.
+### `GET /__introspect/routes`
+
+Verbose route list with middleware counts.
+
+### `GET /__introspect/schema`
+
+Full model definitions with field types and relations.
+
+### `GET /__introspect/env`
+
+All env groups registered via `defineEnv()`.
 
 **Response**:
 ```json
 {
-  "routes": [
-    {
-      "method": "GET",
-      "path": "/users",
-      "handler": "listUsers",
-      "schema": { "querystring": { "page": { "type": "number" } } }
-    },
-    {
-      "method": "POST",
-      "path": "/users",
-      "handler": "createUser",
-      "middleware": ["auth"]
-    }
-  ]
+  "data": {
+    "db":    { "required": ["DATABASE_URL"], "optional": ["DB_POOL_SIZE", "DB_SSL"] },
+    "cache": { "required": ["REDIS_URL"],    "optional": ["REDIS_TTL"] }
+  }
 }
 ```
 
-#### `GET /__introspect/schema`
+### `GET /__introspect/errors`
 
-Returns all defined models.
+Recent runtime errors (last 20).
 
-**Response**:
-```json
-{
-  "models": [
-    {
-      "name": "User",
-      "fields": [
-        { "name": "id", "type": "string", "required": true },
-        { "name": "email", "type": "string", "required": true }
-      ],
-      "relations": [{ "name": "posts", "type": "hasMany", "to": "Post" }]
-    }
-  ]
-}
-```
+### `GET /__introspect/conventions`
 
-#### `GET /__introspect/errors`
+Framework naming and pagination conventions.
 
-Returns recent errors with guidance.
+### `GET /__introspect/health`
 
-**Response**:
-```json
-{
-  "errors": [
-    {
-      "timestamp": "2026-03-26T10:00:00Z",
-      "code": "VALIDATION_ERROR",
-      "message": "Invalid email format",
-      "field": "email",
-      "suggestion": "Ensure email follows format: user@domain.com",
-      "docsUrl": "https://docs.kluster.dev/errors/VALIDATION_ERROR"
-    }
-  ]
-}
-```
+Plugin health check.
 
 ---
 

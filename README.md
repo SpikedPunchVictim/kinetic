@@ -1,74 +1,62 @@
-# @klusterio/kinetic-core
+# Kinetic
 
-AI-optimized Fastify framework for building consistent, type-safe APIs.
+AI-optimized Fastify framework for building consistent, type-safe backend APIs.
 
-> **Note**: Package renamed from `@klusterio/core` to `@klusterio/kinetic-core` to align with the Kinetic framework name.
-
-## Implementation Status
-
-| Phase | Deliverable | Tests | Status |
-|-------|-------------|-------|--------|
-| 1 | Monorepo Foundation | - | **COMPLETE** |
-| 2 | DI Container | 26 | **COMPLETE** |
-| 3 | Schema Module (Model, Routes, Conventions) | 31 | **COMPLETE** |
-| 4 | Application Bootstrap | 7 | **COMPLETE** |
-| 5 | Security Module | 6 | **COMPLETE** |
-| 6 | AI Developer Experience | 6 | **COMPLETE** |
-| 7 | JWT Add-on | - | **COMPLETE** (structure) |
-
-**Total: 76 tests passing** ✅
+Designed to minimise the token cost of AI-assisted development: compact error formats, per-module env validation, a single introspection endpoint, and convention-enforcing helpers that eliminate repetitive boilerplate.
 
 ---
 
-## Project Structure
+## Packages
 
-```
-klusterio-framework/
-├── package.json              # Root workspace config
-├── pnpm-workspace.yaml       # pnpm workspaces
-├── tsconfig.json            # Root TypeScript config (strict mode)
-├── turbo.json               # Build orchestration
-├── packages/
-│   └── core/                # @klusterio/kinetic-core
-│       ├── package.json
-│       ├── tsconfig.json
-│       ├── vitest.config.ts
-│       ├── __tests__/
-│       │   ├── container.test.ts    # 26 tests
-│       │   ├── schema.test.ts       # 31 tests
-│       │   ├── app.test.ts          # 7 tests
-│       │   ├── security.test.ts     # 6 tests
-│       │   └── ai-dev.test.ts       # 6 tests
-│       └── src/
-│           ├── index.ts           # Main exports
-│           ├── container.ts       # DI container with DAG validation
-│           ├── app.ts             # createApp Fastify bootstrap
-│           ├── errors.ts          # FrameworkError types
-│           ├── schema/            # Schema module
-│           │   ├── index.ts
-│           │   ├── model.ts       # defineModel()
-│           │   ├── routes.ts      # generateCrudRoutes()
-│           │   └── conventions.ts # Naming/pagination enforcement
-│           ├── security/          # Security module
-│           │   ├── index.ts
-│           │   └── middleware.ts  # validateBody, rateLimit, auth hooks
-│           ├── observability/     # Placeholder
-│           └── ai-dev/            # AI Developer Experience
-│               ├── index.ts
-│               ├── routes.ts
-│               └── plugin.ts
-├── addons/
-│   └── jwt/                   # @klusterio/addon-jwt
-│       ├── package.json
-│       ├── tsconfig.json
-│       ├── src/
-│       │   ├── index.ts
-│       │   ├── addon.ts
-│       │   └── service.ts
-│       └── __tests__/
-│
-└── examples/
-    └── crud-app/            # Placeholder
+| Package | Description |
+|---|---|
+| `@klusterio/kinetic-core` | Framework core — app bootstrap, models, CRUD, security, env, introspection |
+| `@klusterio/addon-jwt` | JWT sign / verify / middleware |
+| `@klusterio/addon-cors` | CORS via `@fastify/cors` |
+| `@klusterio/addon-kysely` | `ICrud` adapter for Kysely |
+| `@klusterio/addon-otel` | OpenTelemetry distributed tracing |
+
+---
+
+## Quick Start
+
+```typescript
+import { createApp, defineModel, defineService, defineEnv, MemoryStore } from '@klusterio/kinetic-core';
+import { wrapSuccess, enforcePagination } from '@klusterio/kinetic-core/schema';
+import { z } from 'zod';
+
+// 1. Declare env vars — validated at startup, registered to /__introspect
+const env = defineEnv('server', {
+  PORT: z.coerce.number().default(3000),
+  HOST: z.string().default('0.0.0.0'),
+});
+
+// 2. Define models
+const UserModel = defineModel({
+  name: 'User',
+  fields: {
+    id: z.string().uuid(),
+    email: z.string().email(),
+    name: z.string(),
+  },
+});
+
+// 3. Bootstrap
+const app = await createApp({
+  createAppContext: async () => {
+    const userService = defineService({ store: new MemoryStore() });
+    return { userService };
+  },
+  fastifyOptions: { logger: true },
+});
+
+// 4. Routes
+app.get('/users', async (req) => {
+  const users = await app.context.userService.findAll();
+  return enforcePagination(users, { limit: 20 });
+});
+
+await app.listen({ port: env.PORT, host: env.HOST });
 ```
 
 ---
@@ -76,75 +64,206 @@ klusterio-framework/
 ## Development
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Run tests
-pnpm test
-
-# Type check
-pnpm typecheck
-
-# Development mode (watch)
-pnpm dev
+pnpm install     # install all workspace dependencies
+pnpm build       # build all packages
+pnpm test        # run all tests
+pnpm typecheck   # TypeScript check without emit
+pnpm dev         # watch mode
 ```
 
 ---
 
-## Features Implemented
+## Features
 
-### Phase 2: DI Container
-- ✅ Type-safe dependency injection via destructuring
-- ✅ Compile-time dependency inference
-- ✅ DAG validation with cycle detection (DFS)
-- ✅ Topological sort (Kahn's algorithm)
-- ✅ Service scopes (singleton, request, transient)
-- ✅ AI-optimized error messages
+### `createApp(options)` — Application bootstrap
 
-### Phase 3: Schema Module
-- ✅ `defineModel()` with Zod schema inference
-- ✅ camelCase field name enforcement
-- ✅ PascalCase model name validation
-- ✅ `generateCrudRoutes()` with auto-generated URLs
-- ✅ Cursor-based pagination enforcement
-- ✅ Kebab-case URL generation from model names
+Wraps Fastify with typed app-level and per-request contexts.
 
-### Phase 4: Application Bootstrap
-- ✅ `createApp()` Fastify integration
-- ✅ Container validation on startup
-- ✅ Route registration
-- ✅ Addons support
-- ✅ Start/stop lifecycle
+- `x-request-id` propagation (honours incoming header, generates UUID fallback)
+- Structured request/response logging via Fastify's Pino instance
+- Graceful shutdown on `SIGTERM`/`SIGINT` (skipped in `NODE_ENV=test`)
 
-### Phase 5: Security Module
-- ✅ `validateBody()` - Zod request validation
-- ✅ `rateLimit()` - In-memory rate limiting
-- ✅ `createAuthHook()` - Authentication hook factory
-- ✅ `createAuthzHook()` - Authorization hook factory
-- ✅ `extractBearerToken()` - JWT token extraction
-
-### Phase 6: AI Developer Experience
-- ✅ `container.introspect()` - Service dependency visualization
-- ✅ Model field introspection
-- ✅ Container state debugging
-- ✅ Introspection plugin structure
-
-### Phase 7: JWT Add-on
-- ✅ `@klusterio/addon-jwt` package structure
-- ✅ JWT service implementation
-- ✅ JWT addon factory
-- ✅ Token sign/verify/decode
+```typescript
+const app = await createApp({
+  createAppContext: async () => ({ db }),
+  createRequestContext: async (req, ctx) => ({ user: await ctx.db.getUser(req.id) }),
+  fastifyOptions: { logger: { level: 'info' } },
+  gracefulShutdown: true,   // default
+  requestLogging: true,     // default
+});
+```
 
 ---
 
-## All Phases Complete! 🎉
+### `defineEnv(group, schema)` — Environment variable validation
 
-The Klusterio framework core is now fully implemented per the IMPLEMENTATION_GUIDE.md specification.
+Validates env vars at module load time. Throws a single `FrameworkError` listing every failing key. Registers each group to the `/__introspect` manifest so AI tools can discover all requirements in one request.
 
-**Remaining optional work:**
-- Observability module (logging, OpenTelemetry) - stub exists
-- Example CRUD application
-- Additional add-ons
+```typescript
+// db/config.ts — each module owns its slice
+export const dbEnv = defineEnv('db', {
+  DATABASE_URL: z.string().url(),
+  DB_POOL_SIZE: z.coerce.number().default(10),
+});
+
+// cache/config.ts
+export const cacheEnv = defineEnv('cache', {
+  REDIS_URL: z.string().url(),
+  REDIS_TTL: z.coerce.number().default(3600),
+});
+```
+
+Use `z.coerce.number()` / `z.coerce.boolean()` for non-string types since all env values are strings at runtime.
+
+---
+
+### `defineModel(definition)` — Data model definition
+
+Enforces `PascalCase` model names and `camelCase` field names. Powers `generateCrudRoutes()` and model introspection.
+
+```typescript
+const PostModel = defineModel({
+  name: 'Post',
+  fields: {
+    id: z.string().uuid(),
+    title: z.string().min(1).max(200),
+    published: z.boolean().default(false),
+    authorId: z.string(),
+  },
+  relations: {
+    author: { type: 'belongsTo', to: 'User', foreignKey: 'authorId' },
+  },
+});
+```
+
+---
+
+### `defineService(config)` — Service factory with lifecycle hooks
+
+Wraps any `ICrud` store with optional `beforeCreate`, `afterCreate`, `beforeUpdate`, `afterUpdate`, `beforeDelete` hooks — replacing repetitive service boilerplate.
+
+```typescript
+const userService = defineService({
+  store: new MemoryStore(),
+  hooks: {
+    beforeCreate: async (data) => ({ ...data, createdAt: new Date() }),
+    beforeDelete: async (id) => { await audit.log('delete', id); },
+  },
+});
+```
+
+---
+
+### `defineMiddleware(name, fn)` — Named Fastify preHandlers
+
+Gives each middleware a name for introspection and readable stack traces.
+
+```typescript
+const requireAuth = defineMiddleware('requireAuth', async (req, reply) => {
+  if (!req.headers.authorization) reply.code(401).send({ error: 'Unauthorized' });
+});
+
+app.get('/protected', { preHandler: [requireAuth.fn] }, handler);
+```
+
+---
+
+### `generateCrudRoutes(model, config)` — Auto-generated CRUD routes
+
+Generates `POST /resources`, `GET /resources`, `GET /resources/:id`, `PUT /resources/:id`, `DELETE /resources/:id` from a model and `ICrud` store.
+
+```typescript
+const routes = generateCrudRoutes(UserModel, { store: userStore });
+routes.forEach(({ method, path, handler }) => app[method.toLowerCase()](path, handler));
+```
+
+---
+
+### Introspection — `GET /__introspect`
+
+Single endpoint returning a compact manifest of the full app surface. Designed for AI tooling to load application context in one request.
+
+```json
+{
+  "routes":      ["GET /users", "POST /users", "GET /users/:id"],
+  "models":      { "User": { "fields": ["id:str", "email:str", "name:str"], "rel": [] } },
+  "errors":      ["E_INIT", "E_NF", "E_VAL", "E_AUTH", "E_DB"],
+  "conventions": { "url": "kebab", "fields": "camel", "pagination": "cursor" },
+  "env": {
+    "db":    { "required": ["DATABASE_URL"], "optional": ["DB_POOL_SIZE"] },
+    "cache": { "required": ["REDIS_URL"],    "optional": ["REDIS_TTL"] }
+  }
+}
+```
+
+Verbose sub-endpoints: `/__introspect/routes`, `/schema`, `/conventions`, `/errors`, `/env`, `/health`.
+
+---
+
+### Error format
+
+All framework errors use a compact token-efficient format (~14 tokens vs ~45 for verbose):
+
+```
+{"c":"E_NF","s":"userService","r":"not_found","t":1712345678901}
+```
+
+| Field | Meaning |
+|---|---|
+| `c` | Error code (`E_NF`, `E_VAL`, `E_AUTH`, `E_DB`, `E_INIT`) |
+| `s` | Service / subject |
+| `r` | Reason (≤ 20 chars) |
+| `t` | Unix timestamp (ms) |
+
+---
+
+## Addons
+
+### `@klusterio/addon-jwt`
+
+```typescript
+import { JwtAddon } from '@klusterio/addon-jwt';
+
+const jwt = await JwtAddon.create({ secret: process.env.JWT_SECRET });
+const token = jwt.sign({ sub: user.id });
+const claims = jwt.verify(token);
+
+// Fastify middleware
+await app.register(JwtAddon.middleware({ secret: process.env.JWT_SECRET }));
+```
+
+### `@klusterio/addon-cors`
+
+```typescript
+import { CorsAddon } from '@klusterio/addon-cors';
+
+await app.register(CorsAddon.plugin({
+  origin: 'https://app.example.com',
+  credentials: true,
+  exposedHeaders: ['x-request-id'],
+}));
+```
+
+### `@klusterio/addon-kysely`
+
+`KyselyStore<T>` implements `ICrud<T>` for PostgreSQL and SQLite (dialects that support `RETURNING`).
+
+```typescript
+import { KyselyStore } from '@klusterio/addon-kysely';
+import { Kysely, PostgresDialect } from 'kysely';
+
+const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
+const userService = defineService({ store: new KyselyStore<User>(db, 'users') });
+```
+
+---
+
+## Test counts
+
+| Package | Tests |
+|---|---|
+| `@klusterio/kinetic-core` | 145 |
+| `@klusterio/addon-jwt` | 8 |
+| `@klusterio/addon-cors` | 6 |
+| `@klusterio/addon-kysely` | 11 |
+| **Total** | **170** |

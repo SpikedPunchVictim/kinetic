@@ -63,6 +63,11 @@ export interface AppManifest {
     fields: string;
     pagination: string;
   };
+  /**
+   * Env groups registered via defineEnv().
+   * e.g. { db: { required: ["DATABASE_URL"], optional: ["DB_POOL_SIZE=10"] } }
+   */
+  env: Record<string, { required: string[]; optional: string[] }>;
 }
 
 export interface ConventionsIntrospectionResponse {
@@ -169,6 +174,7 @@ export function getAppManifest(
   routes: RouteDefinition[],
   models: Model[],
   errorCodes: string[],
+  envGroups: Record<string, { required: string[]; optional: string[] }> = {},
 ): AppManifest {
   const modelMap: AppManifest['models'] = {};
   for (const m of models) {
@@ -183,6 +189,7 @@ export function getAppManifest(
     models: modelMap,
     errors: errorCodes,
     conventions: { url: 'kebab', fields: 'camel', pagination: 'cursor' },
+    env: envGroups,
   };
 }
 
