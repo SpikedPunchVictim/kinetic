@@ -6,8 +6,8 @@
     "start": "node app.mjs"
   },
   "dependencies": {
-    "@klusterio/addon-cors": "workspace:*",
-    "@klusterio/addon-kysely": "workspace:*",
+    "@klusterio/kinetic-addon-cors": "workspace:*",
+    "@klusterio/kinetic-addon-kysely": "workspace:*",
     "@klusterio/kinetic-core": "workspace:*",
     "kysely": "^0.28.16",
     "zod": "^3.22.0"

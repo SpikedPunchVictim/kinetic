@@ -23,7 +23,7 @@ export { createSpanMiddleware, registerOtelMiddleware };
  * @example
  * ```typescript
  * import { createApp } from '@klusterio/kinetic-core';
- * import { OtelAddon } from '@klusterio/addon-otel';
+ * import { OtelAddon } from '@klusterio/kinetic-addon-otel';
  *
  * const otel = await OtelAddon.create({
  *   serviceName: 'my-service',

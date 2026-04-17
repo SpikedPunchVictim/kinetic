@@ -44,10 +44,10 @@ importers:
 
   examples/cors-kysely:
     dependencies:
-      '@klusterio/addon-cors':
+      '@klusterio/kinetic-addon-cors':
         specifier: workspace:*
         version: link:../../packages/addon-cors
-      '@klusterio/addon-kysely':
+      '@klusterio/kinetic-addon-kysely':
         specifier: workspace:*
         version: link:../../packages/addon-kysely
       '@klusterio/kinetic-core':
@@ -80,7 +80,7 @@ importers:
 
   examples/observability-demo:
     dependencies:
-      '@klusterio/addon-otel':
+      '@klusterio/kinetic-addon-otel':
         specifier: workspace:*
         version: link:../../packages/addon-otel
       '@klusterio/kinetic-core':

@@ -1,5 +1,5 @@
 /**
- * @klusterio/addon-otel - OpenTelemetry Addon for Kinetic
+ * @klusterio/kinetic-addon-otel - OpenTelemetry Addon for Kinetic
  *
  * Provides distributed tracing, metrics collection, and observability
  * for Fastify applications using OpenTelemetry standards.

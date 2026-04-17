@@ -1,5 +1,5 @@
 {
-  "name": "@klusterio/addon-otel",
+  "name": "@klusterio/kinetic-addon-otel",
   "version": "0.1.0",
   "description": "OpenTelemetry addon for Kinetic - traces, metrics, and observability",
   "type": "module",
@@ -46,5 +46,8 @@
     "metrics",
     "kinetic",
     "fastify"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

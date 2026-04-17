@@ -289,7 +289,7 @@ interface AppConfig {
 **Example**:
 ```typescript
 import { createApp, createContainer } from '@klusterio/core';
-import { jwtAddon } from '@klusterio/addon-jwt';
+import { jwtAddon } from '@klusterio/kinetic-addon-jwt';
 
 const container = createContainer({
   db: async () => new Database(),
@@ -987,7 +987,7 @@ interface AddonDefinition<Services = unknown> {
 import { defineAddon } from '@klusterio/core';
 
 export const jwtAddon = defineAddon({
-  name: '@klusterio/addon-jwt',
+  name: '@klusterio/kinetic-addon-jwt',
   version: '1.0.0',
 
   install: async (app, options) => {
@@ -1031,7 +1031,7 @@ import { createApp, createContainer } from '@klusterio/core';
 import { defineModel, generateCrudRoutes } from '@klusterio/schema';
 import { rateLimit } from '@klusterio/security';
 import { healthPlugin, initTracing } from '@klusterio/observability';
-import { jwtAddon } from '@klusterio/addon-jwt';
+import { jwtAddon } from '@klusterio/kinetic-addon-jwt';
 import { z } from 'zod';
 
 // 1. Define models

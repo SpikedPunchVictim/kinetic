@@ -1,5 +1,5 @@
 {
-  "name": "@klusterio/addon-kysely",
+  "name": "@klusterio/kinetic-addon-kysely",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -23,5 +23,8 @@
     "kysely": "^0.28.16",
     "typescript": "^6.0.3",
     "vitest": "^4.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

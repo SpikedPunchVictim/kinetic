@@ -8,8 +8,8 @@
 
 import { createApp, defineService, defineMiddleware, FrameworkError, ErrorCodes } from '@klusterio/kinetic-core';
 import { wrapSuccess, enforcePagination } from '@klusterio/kinetic-core/schema';
-import { CorsAddon } from '@klusterio/addon-cors';
-import { KyselyStore } from '@klusterio/addon-kysely';
+import { CorsAddon } from '@klusterio/kinetic-addon-cors';
+import { KyselyStore } from '@klusterio/kinetic-addon-kysely';
 import { Kysely } from 'kysely';
 
 // ---------------------------------------------------------------------------

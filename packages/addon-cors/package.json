@@ -1,5 +1,5 @@
 {
-  "name": "@klusterio/addon-cors",
+  "name": "@klusterio/kinetic-addon-cors",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -28,5 +28,8 @@
     "fastify": "^5.8.5",
     "typescript": "^6.0.3",
     "vitest": "^4.1.4"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
