@@ -15,6 +15,12 @@ export { FrameworkError, ErrorCodes } from './errors.js';
 // Store exports
 export { MemoryStore } from './crud/store.js';
 
+// Service + middleware helpers
+export { defineService } from './service.js';
+export type { ServiceHooks } from './service.js';
+export { defineMiddleware } from './middleware.js';
+export type { NamedMiddleware } from './middleware.js';
+
 // Tracer exports
 export { InMemoryTracer, registerTraceEndpoint } from './tracer.js';
 

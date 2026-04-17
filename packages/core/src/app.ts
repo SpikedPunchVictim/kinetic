@@ -12,50 +12,67 @@ import type {
 } from './types.js';
 import { FrameworkError, ErrorCodes } from './errors.js';
 
-/**
- * Creates Fastify application with typed contexts
- *
- * @example
- * ```typescript
- * const app = await createApp<{ db: Database }>({
- *   createAppContext: async () => ({
- *     db: await DbAddon.create(env.DATABASE_URL),
- *   }),
- * });
- *
- * // Access context
- * await app.context.db.query('SELECT 1');
- * ```
- */
 export async function createApp<
   TAppContext extends AppContext,
   TRequestContext extends RequestContext = {}
 >(
   options: CreateAppOptions<TAppContext, TRequestContext>
 ): Promise<FastifyWithContext<TAppContext>> {
-  // Create Fastify instance
-  const fastify = Fastify(options.fastifyOptions ?? {});
+  const gracefulShutdown = options.gracefulShutdown ?? true;
+  const requestLogging = options.requestLogging ?? true;
+
+  // Use Fastify's built-in requestIdHeader to propagate x-request-id from
+  // callers, and genReqId to produce UUIDs when no header is present.
+  // Both can be overridden via fastifyOptions.
+  const fastifyOptions = {
+    requestIdHeader: 'x-request-id',
+    genReqId: () => crypto.randomUUID(),
+    ...options.fastifyOptions,
+  };
+
+  const fastify = Fastify(fastifyOptions);
 
   try {
-    // Add JSON body parser (core feature)
     fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_request, body, done) => {
       try {
-        const json = JSON.parse(body as string);
-        done(null, json);
+        done(null, JSON.parse(body as string));
       } catch (err) {
         done(err as Error, undefined);
       }
     });
 
-    // Create app-level context
-    const appContext = await options.createAppContext();
+    // Echo request ID back on every response so callers can correlate logs.
+    fastify.addHook('onSend', async (request, reply) => {
+      reply.header('x-request-id', request.id);
+    });
 
-    // Decorate Fastify with app context
+    // Structured request/response logging via Fastify's bound Pino instance.
+    if (requestLogging) {
+      fastify.addHook('onRequest', async (request) => {
+        request.log.info(
+          { requestId: request.id, method: request.method, url: request.url, ip: request.ip },
+          'incoming request',
+        );
+      });
+
+      fastify.addHook('onResponse', async (request, reply) => {
+        request.log.info(
+          {
+            requestId: request.id,
+            method: request.method,
+            url: request.url,
+            statusCode: reply.statusCode,
+            latencyMs: reply.elapsedTime,
+          },
+          'request completed',
+        );
+      });
+    }
+
+    const appContext = await options.createAppContext();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (fastify as any).context = appContext;
 
-    // Set up request context hook if provided
-    // Use 'requestContext' to avoid conflict with Fastify's built-in 'context' property
     if (options.createRequestContext) {
       fastify.addHook('onRequest', async (request) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,13 +81,22 @@ export async function createApp<
         (request as any).requestContext = await options.createRequestContext!(request, appContext);
       });
     } else {
-      // Still decorate with appContext reference for type safety
       fastify.addHook('onRequest', async (request) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (request as any).appContext = appContext;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (request as any).requestContext = {} as TRequestContext;
       });
+    }
+
+    if (gracefulShutdown && process.env.NODE_ENV !== 'test') {
+      const shutdown = async () => {
+        fastify.log.info('shutdown signal received, draining server');
+        await fastify.close();
+        process.exit(0);
+      };
+      process.once('SIGTERM', shutdown);
+      process.once('SIGINT', shutdown);
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -6,11 +6,13 @@
 
 import type { RouteDefinition } from '../types.js';
 import type { Model } from '../schema/model.js';
+import { ErrorCodes } from '../errors.js';
 import {
   getRoutesIntrospection,
   getSchemaIntrospection,
   getConventionsIntrospection,
   getErrorsIntrospection,
+  getAppManifest,
 } from './routes.js';
 
 export interface IntrospectionPluginOptions {
@@ -24,58 +26,32 @@ interface FastifyInstance {
   log?: { info: (msg: string) => void };
 }
 
-/**
- * Creates a Fastify plugin for AI introspection routes
- *
- * @param options - Plugin options including routes and models
- * @returns Fastify plugin object with register function
- */
 export function createIntrospectionPlugin(options: IntrospectionPluginOptions) {
   const prefix = options.prefix ?? '/__introspect';
   const routes = options.routes ?? [];
   const models = options.models ?? [];
+  const errorCodes = Object.values(ErrorCodes) as string[];
 
   return {
     name: '@klusterio/ai-introspection',
     version: '0.1.0',
 
     async register(fastify: FastifyInstance) {
-      // GET /__introspect/routes - Registered routes
-      fastify.get(`${prefix}/routes`, async () => {
-        return {
-          data: getRoutesIntrospection(routes),
-        };
+      // Single compact manifest — one request to understand the full app.
+      fastify.get(`${prefix}`, async () => {
+        return getAppManifest(routes, models, errorCodes);
       });
 
-      // GET /__introspect/schema - Defined models
-      fastify.get(`${prefix}/schema`, async () => {
-        return {
-          data: getSchemaIntrospection(models),
-        };
-      });
-
-      // GET /__introspect/conventions - Framework conventions
-      fastify.get(`${prefix}/conventions`, async () => {
-        return {
-          data: getConventionsIntrospection(),
-        };
-      });
-
-      // GET /__introspect/errors - Recent errors
-      fastify.get(`${prefix}/errors`, async () => {
-        return {
-          data: getErrorsIntrospection(),
-        };
-      });
-
-      // GET /__introspect/health - Plugin health
-      fastify.get(`${prefix}/health`, async () => {
-        return {
-          status: 'ok',
-          timestamp: new Date().toISOString(),
-          version: '0.1.0',
-        };
-      });
+      // Verbose sub-endpoints retained for detailed inspection.
+      fastify.get(`${prefix}/routes`, async () => ({ data: getRoutesIntrospection(routes) }));
+      fastify.get(`${prefix}/schema`, async () => ({ data: getSchemaIntrospection(models) }));
+      fastify.get(`${prefix}/conventions`, async () => ({ data: getConventionsIntrospection() }));
+      fastify.get(`${prefix}/errors`, async () => ({ data: getErrorsIntrospection() }));
+      fastify.get(`${prefix}/health`, async () => ({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        version: '0.1.0',
+      }));
 
       if (fastify.log) {
         fastify.log.info(`AI introspection endpoints registered at ${prefix}/*`);

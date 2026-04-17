@@ -8,6 +8,7 @@ export {
   registerSecureIntrospection,
   trackError,
   getErrorsIntrospection,
+  getAppManifest,
   clearErrorHistory,
   type IntrospectionRouteOptions,
   type IntrospectionConfig,
@@ -15,6 +16,7 @@ export {
   type SchemaIntrospectionResponse,
   type ConventionsIntrospectionResponse,
   type ErrorsIntrospectionResponse,
+  type AppManifest,
 } from './routes.js';
 
 export {

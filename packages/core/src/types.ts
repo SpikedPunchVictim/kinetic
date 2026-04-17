@@ -85,6 +85,19 @@ export interface CreateAppOptions<
    * Tracer provider (in-memory for dev, OTLP for prod)
    */
   tracer?: TracerProvider;
+
+  /**
+   * Register SIGTERM/SIGINT handlers to drain and close the server.
+   * @default true
+   */
+  gracefulShutdown?: boolean;
+
+  /**
+   * Log each request/response via Fastify's Pino instance.
+   * Only active when fastifyOptions.logger is enabled.
+   * @default true
+   */
+  requestLogging?: boolean;
 }
 
 // ============================================================================

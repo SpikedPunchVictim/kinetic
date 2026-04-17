@@ -47,6 +47,24 @@ export interface ErrorsIntrospectionResponse {
   }>;
 }
 
+/**
+ * Compact manifest consumed by AI tooling in a single request.
+ * Format minimises tokens: routes as strings, models as abbreviated field descriptors.
+ */
+export interface AppManifest {
+  /** e.g. ["GET /users", "POST /users", "GET /users/:id"] */
+  routes: string[];
+  /** e.g. { "User": { fields: ["id:str","email:str"], rel: ["posts:hasMany"] } } */
+  models: Record<string, { fields: string[]; rel: string[] }>;
+  /** All registered error codes */
+  errors: string[];
+  conventions: {
+    url: string;
+    fields: string;
+    pagination: string;
+  };
+}
+
 export interface ConventionsIntrospectionResponse {
   conventions: {
     naming: {
@@ -126,6 +144,45 @@ export function getConventionsIntrospection(): ConventionsIntrospectionResponse 
         nullHandling: 'omit',
       },
     },
+  };
+}
+
+// ============================================================================
+// Compact Manifest (token-efficient)
+// ============================================================================
+
+const TYPE_ABBREV: Record<string, string> = {
+  string: 'str', number: 'num', boolean: 'bool',
+  date: 'date', array: 'arr', object: 'obj',
+};
+
+function abbrevType(t: string): string {
+  return TYPE_ABBREV[t] ?? t;
+}
+
+/**
+ * Returns a single compact manifest — all routes, models, error codes, and
+ * conventions in one response. Designed for AI tooling to load the full app
+ * picture in a single request.
+ */
+export function getAppManifest(
+  routes: RouteDefinition[],
+  models: Model[],
+  errorCodes: string[],
+): AppManifest {
+  const modelMap: AppManifest['models'] = {};
+  for (const m of models) {
+    modelMap[m.name] = {
+      fields: m.getFields().map(f => `${f.name}:${abbrevType(f.type)}${f.required ? '' : '?'}`),
+      rel: m.getRelations().map(r => `${r.name}:${r.type}`),
+    };
+  }
+
+  return {
+    routes: routes.map(r => `${r.method} ${r.path}`),
+    models: modelMap,
+    errors: errorCodes,
+    conventions: { url: 'kebab', fields: 'camel', pagination: 'cursor' },
   };
 }
 
