@@ -2,6 +2,7 @@
   "name": "@klusterio/kinetic-addon-jwt",
   "version": "0.1.0",
   "type": "module",
+  "repository.url": "https://github.com/SpikedPunchVictim/kinetic",
   "exports": {
     ".": {
       "import": "./dist/index.js",

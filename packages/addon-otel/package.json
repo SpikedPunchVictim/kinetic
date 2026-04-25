@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "OpenTelemetry addon for Kinetic - traces, metrics, and observability",
   "type": "module",
+  "repository.url": "https://github.com/SpikedPunchVictim/kinetic",
   "exports": {
     ".": {
       "import": "./dist/index.js",
