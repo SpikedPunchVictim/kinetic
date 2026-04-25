@@ -2,7 +2,9 @@
   "name": "@klusterio/kinetic-core",
   "version": "0.1.1",
   "type": "module",
-  "repository.url": "https://github.com/SpikedPunchVictim/kinetic",
+  "repository": {
+    "url": "https://github.com/SpikedPunchVictim/kinetic"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",

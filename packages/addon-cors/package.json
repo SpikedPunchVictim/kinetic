@@ -2,7 +2,9 @@
   "name": "@klusterio/kinetic-addon-cors",
   "version": "0.1.0",
   "type": "module",
-  "repository.url": "https://github.com/SpikedPunchVictim/kinetic",
+  "repository": {
+    "url": "https://github.com/SpikedPunchVictim/kinetic"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
