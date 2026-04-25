@@ -15,6 +15,10 @@ export { FrameworkError, ErrorCodes } from './errors.js';
 // Store exports
 export { MemoryStore } from './crud/store.js';
 
+// Namespace helpers
+export { defineNamespace } from './namespace.js';
+export type { NamespaceOptions, NamespaceWrapper } from './namespace.js';
+
 // Service + middleware helpers
 export { defineService } from './service.js';
 export type { ServiceHooks } from './service.js';
