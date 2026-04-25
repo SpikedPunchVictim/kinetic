@@ -51,7 +51,7 @@ export async function defineNamespace<
 
   const nsAppCtx = await options.createAppContext(app.context);
 
-  fastify.decorateRequest(name, null);
+  fastify.decorateRequest(name, null as any);
 
   fastify.addHook('onRequest', async (request) => {
     const nsReqCtx = await options.createRequestContext(request, nsAppCtx);
